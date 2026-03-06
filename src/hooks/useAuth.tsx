@@ -123,6 +123,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   const signIn = async (email: string, password: string) => {
+    // Clear admin cache so fresh role check happens after login
+    adminCache.clear();
     const { error } = await supabase.auth.signInWithPassword({
       email,
       password,
