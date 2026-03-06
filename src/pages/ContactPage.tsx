@@ -60,7 +60,7 @@ const ContactPage = () => {
     {
       icon: Phone,
       title: 'মোবাইল / হোয়াটসঅ্যাপ',
-      content: '01995-909243',
+      content: '01719-725181',
       subContent: 'সকাল 10টা – রাত 10টা',
       color: 'from-green-500 to-emerald-600'
     },
@@ -199,7 +199,7 @@ const ContactPage = () => {
 
                 {/* WhatsApp Button */}
                 <a
-                  href="https://wa.me/8801995909243"
+                  href="https://wa.me/8801719725181"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="flex items-center gap-4 p-5 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-2xl hover:shadow-xl hover:shadow-green-500/20 transition-all hover:-translate-y-1"
@@ -211,13 +211,13 @@ const ContactPage = () => {
                   </div>
                   <div>
                     <span className="block font-bold text-lg">WhatsApp এ মেসেজ করুন</span>
-                    <span className="text-white/80 text-sm">01995-909243</span>
+                    <span className="text-white/80 text-sm">01719-725181</span>
                   </div>
                 </a>
 
                 {/* Call Button */}
                 <a
-                  href="tel:+8801995909243"
+                  href="tel:+8801719725181"
                   className="flex items-center gap-4 p-5 bg-gradient-to-r from-blue-500 to-indigo-600 text-white rounded-2xl hover:shadow-xl hover:shadow-blue-500/20 transition-all hover:-translate-y-1"
                 >
                   <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center">

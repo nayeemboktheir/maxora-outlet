@@ -1246,7 +1246,7 @@ export default function FashionHomePage() {
               <ul className="space-y-3 text-sm text-gray-400">
                 <li className="flex items-center gap-2">
                   <span className="text-pink-400">📞</span>
-                  <a href="tel:+8801995909243" className="hover:text-pink-400 transition-colors">01995-909243</a>
+                  <a href="tel:+8801719725181" className="hover:text-pink-400 transition-colors">01719-725181</a>
                 </li>
                 <li className="flex items-center gap-2">
                   <span className="text-pink-400">✉️</span>

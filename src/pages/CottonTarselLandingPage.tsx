@@ -978,10 +978,10 @@ const CheckoutSection = memo(({ products, onSubmit, isSubmitting, selectedProduc
             {/* Contact */}
             <div className="text-center text-sm text-gray-600 space-y-1">
               <p>
-                কল করুন: <a href="tel:+8801995909243" className="font-bold text-gray-900">01995909243</a>
+                কল করুন: <a href="tel:+8801719725181" className="font-bold text-gray-900">01719725181</a>
               </p>
               <a 
-                href="https://wa.me/8801995909243"
+                href="https://wa.me/8801719725181"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-1 text-green-600 font-medium"

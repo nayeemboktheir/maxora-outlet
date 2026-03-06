@@ -23,7 +23,7 @@ const AdminSiteSettings = () => {
   const [headerSettings, setHeaderSettings] = useState<HeaderSettings>({
     site_name: 'খেজুর বাজার',
     site_logo: '',
-    header_phone: '+880 1234-567890',
+    header_phone: '01719-725181',
     header_promo_text: 'Free shipping on orders over ৳2000',
   });
 
