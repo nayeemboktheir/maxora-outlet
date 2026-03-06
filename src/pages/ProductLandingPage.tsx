@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { getEmbedUrl, normalizeExternalUrl, parseIframeHtml } from "@/lib/videoEmbed";
+import { getEmbedUrl } from "@/lib/videoEmbed";
 import {
   ChevronLeft,
   ChevronRight,
@@ -22,6 +22,7 @@ import {
   Flame,
   Gift,
   MapPin,
+  Star,
 } from "lucide-react";
 
 import {
@@ -30,6 +31,7 @@ import {
   SHIPPING_RATES,
 } from "@/components/checkout/ShippingMethodSelector";
 import { toast } from "sonner";
+
 // ====== Interfaces ======
 interface ProductVariation {
   id: string;
@@ -71,7 +73,7 @@ const OptimizedImage = memo(({ src, alt, className, priority = false }: {
   const [loaded, setLoaded] = useState(false);
   return (
     <div className={`relative overflow-hidden ${className}`}>
-      {!loaded && <div className="absolute inset-0 bg-gray-200 animate-pulse" />}
+      {!loaded && <div className="absolute inset-0 bg-muted animate-pulse" />}
       <img
         src={src}
         alt={alt}
@@ -213,7 +215,7 @@ const HeroSection = memo(({ product, currentImage, setCurrentImage, onBuyNow }: 
                 <span className="text-xl text-primary-foreground/50 line-through">৳{product.original_price.toLocaleString()}</span>
               )}
               {discount > 0 && (
-                <Badge className="bg-green-500 text-white font-bold px-3 py-1">
+                <Badge className="bg-accent text-accent-foreground font-bold px-3 py-1">
                   ৳{(product.original_price! - product.price).toLocaleString()} সেভ!
                 </Badge>
               )}
@@ -223,7 +225,7 @@ const HeroSection = memo(({ product, currentImage, setCurrentImage, onBuyNow }: 
             <Button
               onClick={onBuyNow}
               size="lg"
-              className="w-full md:w-auto px-12 py-7 text-xl font-bold bg-gradient-to-r from-accent to-yellow-500 hover:from-yellow-500 hover:to-accent text-foreground rounded-2xl shadow-cta hover:shadow-2xl transition-all duration-300 hover:scale-[1.02] active:scale-[0.98]"
+              className="w-full md:w-auto px-12 py-7 text-xl font-bold bg-gradient-to-r from-accent to-primary hover:from-primary hover:to-accent text-accent-foreground rounded-2xl shadow-cta hover:shadow-2xl transition-all duration-300 hover:scale-[1.02] active:scale-[0.98]"
             >
               <ShoppingBag className="mr-2 h-6 w-6" />
               এখনই অর্ডার করুন
@@ -232,9 +234,9 @@ const HeroSection = memo(({ product, currentImage, setCurrentImage, onBuyNow }: 
             {/* Trust Badges */}
             <div className="grid grid-cols-3 gap-3 pt-3">
               {[
-                { icon: Shield, text: "১০০% গ্যারান্টি", color: "text-green-400" },
-                { icon: Truck, text: "সারাদেশে ডেলিভারি", color: "text-blue-400" },
-                { icon: Gift, text: "ক্যাশ অন ডেলিভারি", color: "text-purple-400" },
+                { icon: Shield, text: "১০০% গ্যারান্টি", color: "text-accent" },
+                { icon: Truck, text: "সারাদেশে ডেলিভারি", color: "text-accent" },
+                { icon: Gift, text: "ক্যাশ অন ডেলিভারি", color: "text-accent" },
               ].map((item, idx) => (
                 <div key={idx} className="text-center p-3 rounded-xl bg-white/5 backdrop-blur-sm border border-white/10 hover:bg-white/10 transition-colors">
                   <item.icon className={`h-6 w-6 mx-auto mb-1.5 ${item.color}`} />
@@ -252,7 +254,7 @@ HeroSection.displayName = 'HeroSection';
 
 // ====== Features ======
 const FeaturesBanner = memo(() => (
-  <section className="bg-gradient-to-r from-accent via-yellow-400 to-accent py-5 overflow-hidden relative">
+  <section className="bg-gradient-to-r from-primary via-accent to-primary py-5 overflow-hidden relative">
     <div className="container mx-auto px-4 relative">
       <div className="flex flex-wrap justify-center gap-4 md:gap-8">
         {[
@@ -261,9 +263,9 @@ const FeaturesBanner = memo(() => (
           { text: "কমফোর্টেবল ফিট", icon: "👕" },
           { text: "ইজি এক্সচেঞ্জ", icon: "🔄" }
         ].map((item, idx) => (
-          <div key={idx} className="flex items-center gap-2 bg-white/50 backdrop-blur-sm px-4 py-2 rounded-full text-foreground font-semibold text-sm shadow-sm hover:bg-white/70 transition-colors">
+          <div key={idx} className="flex items-center gap-2 bg-white/20 backdrop-blur-sm px-4 py-2 rounded-full text-white font-semibold text-sm shadow-sm hover:bg-white/30 transition-colors">
             <span>{item.icon}</span>
-            <CheckCircle2 className="h-4 w-4 text-green-600" />
+            <CheckCircle2 className="h-4 w-4 text-white" />
             <span>{item.text}</span>
           </div>
         ))}
@@ -305,11 +307,8 @@ const VideoSection = memo(({ videoUrl }: { videoUrl?: string }) => {
   if (!videoUrl) return null;
 
   const raw = (videoUrl || "").trim();
-  
-  // Check if it's raw HTML (iframe embed code) - Elementor style: render exactly as-is
   const isRawHtml = raw.startsWith("<");
   
-  // Extract aspect ratio info from iframe for proper sizing
   const extractAspectInfo = (html: string) => {
     const widthMatch = html.match(/width=["']?(\d+)/i);
     const heightMatch = html.match(/height=["']?(\d+)/i);
@@ -324,7 +323,7 @@ const VideoSection = memo(({ videoUrl }: { videoUrl?: string }) => {
     <section className="py-10 md:py-16 gradient-dark">
       <div className="container mx-auto px-4">
         <div className="text-center mb-8">
-          <span className="inline-flex items-center gap-2 bg-primary/20 text-primary-foreground px-4 py-1.5 rounded-full text-sm font-medium mb-3">
+          <span className="inline-flex items-center gap-2 bg-accent/20 text-accent px-4 py-1.5 rounded-full text-sm font-medium mb-3">
             <Play className="h-4 w-4" />
             ভিডিও দেখুন
           </span>
@@ -333,11 +332,10 @@ const VideoSection = memo(({ videoUrl }: { videoUrl?: string }) => {
 
         <div className={`max-w-3xl mx-auto ${aspectInfo.isPortrait ? "max-w-sm" : ""}`}>
           <div
-            className="relative rounded-2xl overflow-hidden shadow-2xl bg-gray-900 ring-1 ring-white/10"
+            className="relative rounded-2xl overflow-hidden shadow-2xl bg-foreground/90 ring-1 ring-white/10"
             style={{ aspectRatio: aspectInfo.isPortrait ? "9/16" : "16/9" }}
           >
             {isRawHtml ? (
-              // ELEMENTOR STYLE: Render raw HTML exactly as provided - no sanitization
               <div
                 className="absolute inset-0 [&>iframe]:!absolute [&>iframe]:!inset-0 [&>iframe]:!w-full [&>iframe]:!h-full [&>iframe]:!border-0"
                 dangerouslySetInnerHTML={{ __html: raw }}
@@ -372,14 +370,12 @@ VideoSection.displayName = "VideoSection";
 const ProductDescriptionSection = memo(({ description }: { description?: string }) => {
   if (!description || !description.trim()) return null;
   
-  // Parse description - split by newlines and handle bullet points
   const lines = description.split('\n').filter(line => line.trim());
   
   return (
-    <section className="py-10 md:py-16 bg-gradient-to-b from-white to-gray-50">
+    <section className="py-10 md:py-16 bg-gradient-to-b from-background to-secondary/30">
       <div className="container mx-auto px-4">
         <div className="max-w-3xl mx-auto">
-          {/* Header */}
           <div className="text-center mb-8">
             <span className="inline-flex items-center gap-2 bg-primary/10 text-primary px-4 py-1.5 rounded-full text-sm font-medium mb-3">
               📋 বিস্তারিত
@@ -387,8 +383,7 @@ const ProductDescriptionSection = memo(({ description }: { description?: string 
             <h2 className="text-2xl md:text-3xl font-bold text-foreground font-bengali">প্রোডাক্ট বিবরণ</h2>
           </div>
           
-          {/* Description Cards */}
-          <div className="bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden">
+          <div className="bg-card rounded-2xl shadow-xl border border-border overflow-hidden">
             <div className="bg-gradient-to-r from-primary to-accent p-4">
               <h3 className="text-lg font-bold text-primary-foreground font-bengali">
                 এই প্রোডাক্টের বৈশিষ্ট্য
@@ -398,7 +393,6 @@ const ProductDescriptionSection = memo(({ description }: { description?: string 
             <div className="p-6">
               <ul className="space-y-3">
                 {lines.map((line, idx) => {
-                  // Remove ALL leading emoji/bullet/special chars including diamond ◊
                   const cleanLine = line
                     .replace(/^[\s◊◆●○▪▫•✓✔✅👉👍🔘🌴\-\*\u25CA\u25C6\u25CF\u25CB\u25AA\u25AB]+/g, '')
                     .trim();
@@ -407,9 +401,10 @@ const ProductDescriptionSection = memo(({ description }: { description?: string 
                   return (
                     <li 
                       key={idx}
-                      className="p-4 rounded-xl bg-gradient-to-r from-green-50 to-emerald-50 border border-green-100 hover:shadow-md transition-all duration-300"
+                      className="p-4 rounded-xl bg-gradient-to-r from-primary/5 to-accent/5 border border-primary/10 hover:shadow-md transition-all duration-300"
                     >
-                      <span className="text-gray-800 font-medium text-base md:text-lg leading-relaxed font-bengali">
+                      <span className="text-foreground font-medium text-base md:text-lg leading-relaxed font-bengali flex items-start gap-3">
+                        <CheckCircle2 className="h-5 w-5 text-accent mt-1 flex-shrink-0" />
                         {cleanLine}
                       </span>
                     </li>
@@ -419,9 +414,11 @@ const ProductDescriptionSection = memo(({ description }: { description?: string 
             </div>
             
             {/* Trust Footer */}
-            <div className="bg-gradient-to-r from-amber-50 to-yellow-50 p-4 border-t border-amber-100">
-              <p className="text-center text-amber-700 font-medium font-bengali">
+            <div className="bg-gradient-to-r from-accent/10 to-primary/10 p-4 border-t border-border">
+              <p className="text-center text-primary font-medium font-bengali flex items-center justify-center gap-2">
+                <Star className="h-4 w-4 text-accent" />
                 ১০০% কোয়ালিটি গ্যারান্টি সহ
+                <Star className="h-4 w-4 text-accent" />
               </p>
             </div>
           </div>
@@ -434,22 +431,22 @@ ProductDescriptionSection.displayName = 'ProductDescriptionSection';
 
 // ====== Delivery Info ======
 const DeliverySection = memo(() => (
-  <section className="py-8 md:py-12 bg-white">
+  <section className="py-8 md:py-12 bg-card">
     <div className="container mx-auto px-4">
-      <h2 className="text-xl md:text-2xl font-bold text-center text-gray-900 mb-6">ডেলিভারি ও পেমেন্ট</h2>
+      <h2 className="text-xl md:text-2xl font-bold text-center text-foreground mb-6">ডেলিভারি ও পেমেন্ট</h2>
       <div className="grid md:grid-cols-3 gap-4 max-w-3xl mx-auto">
         {[
-          { icon: Truck, title: "ঢাকায় ৮০৳", sub: "বাইরে ১৩০৳", color: "bg-blue-500" },
-          { icon: Clock, title: "১-৩ দিনে", sub: "ডেলিভারি", color: "bg-green-500" },
-          { icon: Shield, title: "ক্যাশ অন", sub: "ডেলিভারি", color: "bg-purple-500" },
+          { icon: Truck, title: "ঢাকায় ৮০৳", sub: "বাইরে ১৩০৳", color: "bg-accent" },
+          { icon: Clock, title: "১-৩ দিনে", sub: "ডেলিভারি", color: "bg-primary" },
+          { icon: Shield, title: "ক্যাশ অন", sub: "ডেলিভারি", color: "bg-accent" },
         ].map((item, idx) => (
-          <div key={idx} className="flex items-center gap-3 p-4 bg-gray-50 rounded-xl">
+          <div key={idx} className="flex items-center gap-3 p-4 bg-secondary/50 rounded-xl border border-border hover:shadow-md transition-all">
             <div className={`w-12 h-12 ${item.color} rounded-xl flex items-center justify-center flex-shrink-0`}>
               <item.icon className="h-6 w-6 text-white" />
             </div>
             <div>
-              <p className="font-bold text-gray-900">{item.title}</p>
-              <p className="text-sm text-gray-600">{item.sub}</p>
+              <p className="font-bold text-foreground">{item.title}</p>
+              <p className="text-sm text-muted-foreground">{item.sub}</p>
             </div>
           </div>
         ))}
@@ -471,7 +468,6 @@ const CheckoutSection = memo(({ product, onSubmit, isSubmitting }: {
   const sizeSelectionRef = useRef<HTMLDivElement>(null);
 
   const variations = useMemo(() => {
-    // De-dupe by variation name to avoid showing the same "Size" multiple times
     const seen = new Set<string>();
     const out: ProductVariation[] = [];
     for (const v of product.variations || []) {
@@ -498,7 +494,6 @@ const CheckoutSection = memo(({ product, onSubmit, isSubmitting }: {
     e.preventDefault();
     if (variations.length > 0 && !form.selectedVariationId) {
       toast.error("সাইজ সিলেক্ট করুন");
-      // Scroll to size selection area
       sizeSelectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
       return;
     }
@@ -518,18 +513,18 @@ const CheckoutSection = memo(({ product, onSubmit, isSubmitting }: {
   }, []);
 
   return (
-    <section id="checkout" className="py-8 md:py-12 bg-gradient-to-b from-gray-100 to-white">
+    <section id="checkout" className="py-8 md:py-12 bg-gradient-to-b from-secondary/40 to-background">
       <div className="container mx-auto px-4">
         <div className="max-w-lg mx-auto">
           <div className="text-center mb-6">
-            <h2 className="text-2xl md:text-3xl font-bold text-gray-900">অর্ডার করুন</h2>
-            <p className="text-gray-600 text-sm mt-1">পণ্য হাতে পেয়ে মূল্য পরিশোধ করুন</p>
+            <h2 className="text-2xl md:text-3xl font-bold text-foreground">অর্ডার করুন</h2>
+            <p className="text-muted-foreground text-sm mt-1">পণ্য হাতে পেয়ে মূল্য পরিশোধ করুন</p>
           </div>
 
           <form ref={formRef} onSubmit={handleSubmit} className="space-y-4">
             {/* Product Card */}
-            <div className="bg-white rounded-xl shadow-lg overflow-hidden border">
-              <div className="bg-gray-900 text-white py-3 px-4 font-bold flex items-center gap-2">
+            <div className="bg-card rounded-xl shadow-lg overflow-hidden border border-border">
+              <div className="bg-gradient-to-r from-primary to-accent text-primary-foreground py-3 px-4 font-bold flex items-center gap-2">
                 <ShoppingBag className="h-4 w-4" />
                 প্রোডাক্ট
               </div>
@@ -537,19 +532,19 @@ const CheckoutSection = memo(({ product, onSubmit, isSubmitting }: {
               <div className="p-4">
                 {/* Product Info Row */}
                 <div className="flex gap-3 items-center mb-4">
-                  <div className="w-16 h-16 rounded-lg overflow-hidden bg-gray-100 flex-shrink-0">
+                  <div className="w-16 h-16 rounded-lg overflow-hidden bg-muted flex-shrink-0">
                     {product.images?.[0] && <OptimizedImage src={product.images[0]} alt="" className="w-full h-full" />}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="font-bold text-gray-900 truncate">{product.name}</p>
-                    <p className="text-xl font-bold text-amber-600">৳{unitPrice.toLocaleString()}</p>
+                    <p className="font-bold text-foreground truncate">{product.name}</p>
+                    <p className="text-xl font-bold text-primary">৳{unitPrice.toLocaleString()}</p>
                   </div>
                 </div>
 
                 {/* Size Selection */}
                 {variations.length > 0 && (
                   <div ref={sizeSelectionRef} className="mb-4">
-                    <p className="text-sm font-medium text-gray-700 mb-2">সাইজ নির্বাচন করুন <span className="text-red-500">*</span></p>
+                    <p className="text-sm font-medium text-foreground mb-2">সাইজ নির্বাচন করুন <span className="text-destructive">*</span></p>
                     <div className="flex flex-wrap gap-2">
                       {variations.map((v) => (
                         <button
@@ -558,8 +553,8 @@ const CheckoutSection = memo(({ product, onSubmit, isSubmitting }: {
                           onClick={() => updateForm('selectedVariationId', v.id)}
                           className={`px-4 py-2.5 rounded-lg font-semibold transition-all border-2 ${
                             form.selectedVariationId === v.id
-                              ? 'border-amber-500 bg-amber-500 text-white shadow-md'
-                              : 'border-gray-200 bg-gray-50 text-gray-700 hover:border-amber-300'
+                              ? 'border-primary bg-primary text-primary-foreground shadow-md'
+                              : 'border-border bg-secondary/50 text-foreground hover:border-primary/50'
                           }`}
                         >
                           {v.name}
@@ -567,25 +562,25 @@ const CheckoutSection = memo(({ product, onSubmit, isSubmitting }: {
                       ))}
                     </div>
                     {!form.selectedVariationId && (
-                      <p className="text-xs text-red-500 mt-1">* সাইজ সিলেক্ট করুন</p>
+                      <p className="text-xs text-destructive mt-1">* সাইজ সিলেক্ট করুন</p>
                     )}
                   </div>
                 )}
 
                 {/* Quantity */}
-                <div className="flex items-center justify-between bg-gray-50 p-3 rounded-lg">
-                  <span className="font-medium text-gray-700">পরিমাণ</span>
+                <div className="flex items-center justify-between bg-secondary/50 p-3 rounded-lg">
+                  <span className="font-medium text-foreground">পরিমাণ</span>
                   <div className="flex items-center gap-3">
                     <button
                       type="button"
                       onClick={() => updateForm('quantity', Math.max(1, form.quantity - 1))}
-                      className="w-9 h-9 rounded-full bg-gray-200 flex items-center justify-center hover:bg-gray-300 font-bold text-lg"
+                      className="w-9 h-9 rounded-full bg-muted flex items-center justify-center hover:bg-muted/70 font-bold text-lg text-foreground"
                     >−</button>
-                    <span className="text-lg font-bold w-6 text-center">{form.quantity}</span>
+                    <span className="text-lg font-bold w-6 text-center text-foreground">{form.quantity}</span>
                     <button
                       type="button"
                       onClick={() => updateForm('quantity', form.quantity + 1)}
-                      className="w-9 h-9 rounded-full bg-amber-500 text-white flex items-center justify-center hover:bg-amber-600 font-bold text-lg"
+                      className="w-9 h-9 rounded-full bg-primary text-primary-foreground flex items-center justify-center hover:bg-primary/90 font-bold text-lg"
                     >+</button>
                   </div>
                 </div>
@@ -593,9 +588,9 @@ const CheckoutSection = memo(({ product, onSubmit, isSubmitting }: {
             </div>
 
             {/* Customer Info */}
-            <div className="bg-white rounded-xl shadow-lg p-4 border space-y-3">
-              <h3 className="font-bold flex items-center gap-2 text-gray-900">
-                <Phone className="h-4 w-4 text-amber-500" />
+            <div className="bg-card rounded-xl shadow-lg p-4 border border-border space-y-3">
+              <h3 className="font-bold flex items-center gap-2 text-foreground">
+                <Phone className="h-4 w-4 text-primary" />
                 আপনার তথ্য
               </h3>
               <Input
@@ -605,32 +600,32 @@ const CheckoutSection = memo(({ product, onSubmit, isSubmitting }: {
                 type="tel"
                 inputMode="numeric"
                 required
-                className="h-12 text-base rounded-lg border-2 focus:border-amber-500"
+                className="h-12 text-base rounded-lg border-2 focus:border-primary"
               />
               <Input
                 value={form.name}
                 onChange={(e) => updateForm('name', e.target.value)}
                 placeholder="আপনার নাম *"
                 required
-                className="h-12 text-base rounded-lg border-2 focus:border-amber-500"
+                className="h-12 text-base rounded-lg border-2 focus:border-primary"
               />
               <div className="relative">
-                <MapPin className="absolute left-3 top-3 h-5 w-5 text-gray-400" />
+                <MapPin className="absolute left-3 top-3 h-5 w-5 text-muted-foreground" />
                 <Textarea
                   value={form.address}
                   onChange={(e) => updateForm('address', e.target.value)}
                   placeholder="সম্পূর্ণ ঠিকানা (বাড়ি, রোড, থানা, জেলা) *"
                   required
                   rows={2}
-                  className="pl-10 text-base rounded-lg border-2 focus:border-amber-500 resize-none"
+                  className="pl-10 text-base rounded-lg border-2 focus:border-primary resize-none"
                 />
               </div>
             </div>
 
             {/* Shipping */}
-            <div className="bg-white rounded-xl shadow-lg p-4 border">
-              <h3 className="font-bold flex items-center gap-2 text-gray-900 mb-3">
-                <Truck className="h-4 w-4 text-amber-500" />
+            <div className="bg-card rounded-xl shadow-lg p-4 border border-border">
+              <h3 className="font-bold flex items-center gap-2 text-foreground mb-3">
+                <Truck className="h-4 w-4 text-accent" />
                 ডেলিভারি এরিয়া
               </h3>
               <ShippingMethodSelector
@@ -641,19 +636,19 @@ const CheckoutSection = memo(({ product, onSubmit, isSubmitting }: {
             </div>
 
             {/* Order Summary */}
-            <div className="bg-gray-900 rounded-xl p-4 text-white">
+            <div className="gradient-dark rounded-xl p-4 text-white">
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between">
-                  <span className="text-gray-400">সাবটোটাল ({form.quantity}টি)</span>
+                  <span className="text-white/60">সাবটোটাল ({form.quantity}টি)</span>
                   <span>৳{subtotal.toLocaleString()}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-gray-400">ডেলিভারি</span>
+                  <span className="text-white/60">ডেলিভারি</span>
                   <span>৳{shippingCost}</span>
                 </div>
-                <div className="flex justify-between text-lg font-bold pt-2 border-t border-gray-700">
+                <div className="flex justify-between text-lg font-bold pt-2 border-t border-white/20">
                   <span>সর্বমোট</span>
-                  <span className="text-amber-400">৳{total.toLocaleString()}</span>
+                  <span className="text-accent">৳{total.toLocaleString()}</span>
                 </div>
               </div>
             </div>
@@ -662,7 +657,7 @@ const CheckoutSection = memo(({ product, onSubmit, isSubmitting }: {
             <Button
               type="submit"
               disabled={isSubmitting}
-              className="w-full h-14 text-lg font-bold bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white rounded-xl shadow-xl disabled:opacity-70"
+              className="w-full h-14 text-lg font-bold bg-gradient-to-r from-accent to-primary hover:from-primary hover:to-accent text-primary-foreground rounded-xl shadow-xl disabled:opacity-70"
             >
               {isSubmitting ? (
                 <span className="flex items-center gap-2">
@@ -678,15 +673,15 @@ const CheckoutSection = memo(({ product, onSubmit, isSubmitting }: {
             </Button>
 
             {/* Contact */}
-            <div className="text-center text-sm text-gray-600 space-y-1">
+            <div className="text-center text-sm text-muted-foreground space-y-1">
               <p>
-                কল করুন: <a href="tel:+8801995909243" className="font-bold text-gray-900">01995909243</a>
+                কল করুন: <a href="tel:+8801995909243" className="font-bold text-foreground">01995909243</a>
               </p>
               <a 
                 href="https://wa.me/8801995909243"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 text-green-600 font-medium"
+                className="inline-flex items-center gap-1 text-accent font-medium"
               >
                 <MessageCircle className="h-4 w-4" />
                 WhatsApp
@@ -709,20 +704,16 @@ const ProductLandingPage = () => {
   const [showFloatingCta, setShowFloatingCta] = useState(true);
   const checkoutRef = useRef<HTMLDivElement>(null);
 
-  // Hide floating CTA when checkout section is visible
   useEffect(() => {
     const checkVisibility = () => {
       if (checkoutRef.current) {
         const rect = checkoutRef.current.getBoundingClientRect();
-        // Hide floating button when checkout section top is in lower 70% of viewport
         const isCheckoutVisible = rect.top < window.innerHeight * 0.7;
         setShowFloatingCta(!isCheckoutVisible);
       }
     };
 
-    // Check on scroll
     window.addEventListener('scroll', checkVisibility, { passive: true });
-    // Initial check after a small delay to ensure DOM is ready
     const timer = setTimeout(checkVisibility, 100);
 
     return () => {
@@ -730,7 +721,6 @@ const ProductLandingPage = () => {
       clearTimeout(timer);
     };
   }, []);
-
 
   const { data: product, isLoading, error } = useQuery({
     queryKey: ["product-landing", slug],
@@ -795,7 +785,6 @@ const ProductLandingPage = () => {
 
       if (error) throw error;
 
-      // place-order returns 200 even for blocked attempts (data.error + errorCode)
       if (data?.error) {
         toast.error(data.error);
         return;
@@ -827,23 +816,24 @@ const ProductLandingPage = () => {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="w-12 h-12 border-4 border-amber-500 border-t-transparent rounded-full animate-spin" />
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin" />
       </div>
     );
   }
 
   if (error || !product) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 p-4">
-        <h1 className="text-xl font-bold mb-4">প্রোডাক্ট পাওয়া যায়নি</h1>
-        <Button onClick={() => navigate("/")} className="bg-amber-500 hover:bg-amber-600">হোম পেজে যান</Button>
+      <div className="min-h-screen flex flex-col items-center justify-center bg-background p-4">
+        <h1 className="text-xl font-bold mb-4 text-foreground">প্রোডাক্ট পাওয়া যায়নি</h1>
+        <Button onClick={() => navigate("/")} className="bg-primary hover:bg-primary/90 text-primary-foreground">হোম পেজে যান</Button>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-background">
+      <UrgencyBanner />
       <HeroSection product={product} currentImage={currentImage} setCurrentImage={setCurrentImage} onBuyNow={scrollToCheckout} />
       <FeaturesBanner />
       <ProductDescriptionSection description={product.long_description} />
@@ -854,12 +844,12 @@ const ProductLandingPage = () => {
         <CheckoutSection product={product} onSubmit={handleOrderSubmit} isSubmitting={isSubmitting} />
       </div>
       
-      {/* Floating CTA - hidden when checkout is visible */}
+      {/* Floating CTA */}
       {showFloatingCta && (
-        <div className="fixed bottom-0 left-0 right-0 p-3 bg-white/95 backdrop-blur-sm border-t md:hidden z-50 safe-area-inset-bottom">
+        <div className="fixed bottom-0 left-0 right-0 p-3 bg-background/95 backdrop-blur-sm border-t border-border md:hidden z-50 safe-area-inset-bottom">
           <Button
             onClick={scrollToCheckout}
-            className="w-full h-12 text-base font-bold bg-gradient-to-r from-amber-500 to-orange-500 text-gray-900 rounded-xl shadow-lg"
+            className="w-full h-12 text-base font-bold bg-gradient-to-r from-primary to-accent text-primary-foreground rounded-xl shadow-lg"
           >
             <ShoppingBag className="mr-2 h-5 w-5" />
             এখনই অর্ডার করুন
