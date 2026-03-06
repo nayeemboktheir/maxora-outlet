@@ -96,7 +96,7 @@ export default function FashionHomePage() {
     refetchOnWindowFocus: false,
   });
 
-  const siteName = headerSettings?.site_name || 'Modessi';
+  const siteName = headerSettings?.site_name || 'Maxora Outlet';
   const siteLogo = headerSettings?.site_logo || headerSettings?.shop_logo_url || defaultLogo;
 
   useEffect(() => {
