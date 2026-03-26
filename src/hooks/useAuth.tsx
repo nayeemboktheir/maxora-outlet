@@ -63,13 +63,16 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     }
 
     try {
-      const { data, error } = await withTimeout(
-        supabase
+      const roleQueryPromise = (async () =>
+        await supabase
           .from('user_roles')
           .select('role')
           .eq('user_id', userId)
           .eq('role', 'admin')
-          .maybeSingle(),
+          .maybeSingle())();
+
+      const { data, error } = await withTimeout(
+        roleQueryPromise,
         AUTH_REQUEST_TIMEOUT_MS,
         'Admin role check timed out'
       );
