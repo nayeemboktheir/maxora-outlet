@@ -1424,19 +1424,28 @@ export default function AdminOrders() {
                     </Select>
                   </TableCell>
                   <TableCell>
-                    {order.tracking_number ? (
-                      <a 
-                        href={`https://steadfast.com.bd/t/${order.tracking_number}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex"
-                      >
-                        <Badge variant="secondary" className="gap-1 cursor-pointer hover:bg-primary hover:text-primary-foreground transition-colors">
-                          <Truck className="h-3 w-3" />
-                          {order.tracking_number}
-                        </Badge>
-                      </a>
-                    ) : (
+                    {order.tracking_number ? (() => {
+                      const tn = order.tracking_number!;
+                      const isCarrybee = /^F\d{4}[A-Z0-9]+$/i.test(tn);
+                      const trackUrl = isCarrybee
+                        ? `https://merchant.carrybee.com/order-track/${tn}`
+                        : `https://steadfast.com.bd/t/${tn}`;
+                      const courierLabel = isCarrybee ? 'Carrybee' : 'Steadfast';
+                      const courierColor = isCarrybee ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200' : '';
+                      return (
+                        <a 
+                          href={trackUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex"
+                        >
+                          <Badge variant="secondary" className={`gap-1 cursor-pointer transition-colors ${courierColor || 'hover:bg-primary hover:text-primary-foreground'}`}>
+                            <Truck className="h-3 w-3" />
+                            {tn}
+                          </Badge>
+                        </a>
+                      );
+                    })() : (
                       <span className="text-muted-foreground text-sm">Not sent</span>
                     )}
                   </TableCell>
