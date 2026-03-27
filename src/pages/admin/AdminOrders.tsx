@@ -165,6 +165,8 @@ export default function AdminOrders() {
   const [sendingToSteadfast, setSendingToSteadfast] = useState(false);
   const [selectedOrderIds, setSelectedOrderIds] = useState<Set<string>>(new Set());
   const [bulkSending, setBulkSending] = useState(false);
+  const [bulkSendingCarrybee, setBulkSendingCarrybee] = useState(false);
+  const [sendingToCarrybee, setSendingToCarrybee] = useState(false);
   const [bulkStatusChanging, setBulkStatusChanging] = useState(false);
   const [isInvoiceDialogOpen, setIsInvoiceDialogOpen] = useState(false);
   const [isStickerDialogOpen, setIsStickerDialogOpen] = useState(false);
