@@ -225,14 +225,6 @@ Deno.serve(async (req) => {
 
     if (!clientId || !clientSecret || !clientContext) {
       return new Response(
-        JSON.stringify({ error: 'Carrybee credentials not configured. Please add them in Admin → Courier Settings → Carrybee tab.' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    // Keep credentials header-based per Carrybee v2 docs
-    if (!clientId || !clientSecret || !clientContext) {
-      return new Response(
         JSON.stringify({ error: 'Carrybee credentials not configured. Please add Client ID, Client Secret and Client Context in Admin → Courier Settings → Carrybee tab.' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
@@ -247,12 +239,20 @@ Deno.serve(async (req) => {
       const results: { orderId: string; success: boolean; tracking_code?: string; error?: string }[] = [];
 
       for (const order of body.orders as CarrybeeOrderRequest[]) {
-        const result = await sendToCarrybee(order, baseUrl, accessToken, storeId);
+        const result = await sendToCarrybee(order, baseUrl, clientId, clientSecret, clientContext, storeId);
 
         if (result.success && result.data) {
-          const trackingCode = result.data.tracking_code || result.data.order_id || result.data.id;
+          const nestedData = (result.data.data as Record<string, unknown> | undefined) || {};
+          const nestedOrder = (nestedData.order as Record<string, unknown> | undefined) || {};
+          const trackingCode =
+            (typeof nestedOrder.consignment_id === 'string' && nestedOrder.consignment_id) ||
+            (typeof result.data.consignment_id === 'string' && result.data.consignment_id) ||
+            (typeof result.data.tracking_code === 'string' && result.data.tracking_code) ||
+            (typeof result.data.order_id === 'string' && result.data.order_id) ||
+            (typeof result.data.id === 'string' && result.data.id) ||
+            '';
 
-          if (order.orderId) {
+          if (trackingCode && order.orderId) {
             await supabase
               .from('orders')
               .update({
@@ -262,7 +262,7 @@ Deno.serve(async (req) => {
               .eq('id', order.orderId);
           }
 
-          results.push({ orderId: order.orderId, success: true, tracking_code: trackingCode });
+          results.push({ orderId: order.orderId, success: true, tracking_code: trackingCode || undefined });
         } else {
           results.push({ orderId: order.orderId, success: false, error: result.error });
         }
