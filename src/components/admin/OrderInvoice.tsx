@@ -32,6 +32,7 @@ interface Order {
   notes: string | null;
   invoice_note?: string | null;
   steadfast_note?: string | null;
+  order_source?: string;
   created_at: string;
   order_items: OrderItem[];
 }
@@ -40,6 +41,7 @@ interface OrderInvoiceProps {
   order: Order;
   shopName?: string;
   shopLogo?: string | null;
+  courierProvider?: 'steadfast' | 'carrybee' | 'none';
 }
 
 const Barcode = ({ value }: { value: string }) => {
@@ -64,9 +66,23 @@ const Barcode = ({ value }: { value: string }) => {
   return <svg ref={barcodeRef} />;
 };
 
+function detectCourier(order: Order, courierProvider?: string): { name: string; id: string } {
+  if (courierProvider === 'carrybee') {
+    return { name: 'Carrybee', id: order.tracking_number || 'Pending' };
+  }
+  if (courierProvider === 'steadfast' || order.steadfast_consignment_id) {
+    return { name: 'Steadfast', id: order.steadfast_consignment_id || order.tracking_number || 'Pending' };
+  }
+  if (order.tracking_number) {
+    return { name: 'Courier', id: order.tracking_number };
+  }
+  return { name: '', id: '' };
+}
+
 export const OrderInvoice = forwardRef<HTMLDivElement, OrderInvoiceProps>(
-  ({ order, shopName = 'Your Shop', shopLogo }, ref) => {
+  ({ order, shopName = 'Maxora Outlet', shopLogo, courierProvider }, ref) => {
     const totalItems = order.order_items.reduce((sum, item) => sum + item.quantity, 0);
+    const courier = detectCourier(order, courierProvider);
 
     return (
       <div
@@ -82,8 +98,7 @@ export const OrderInvoice = forwardRef<HTMLDivElement, OrderInvoiceProps>(
         }}
       >
         {/* Header */}
-        <div className="flex justify-between items-start mb-8">
-          {/* Logo Section */}
+        <div className="flex justify-between items-start mb-6">
           <div className="flex-1">
             {shopLogo ? (
               <img src={shopLogo} alt={shopName} style={{ height: '70px', objectFit: 'contain' }} />
@@ -100,10 +115,8 @@ export const OrderInvoice = forwardRef<HTMLDivElement, OrderInvoiceProps>(
               </h1>
             )}
           </div>
-
-          {/* Invoice Title & Barcode */}
           <div style={{ textAlign: 'right' }}>
-            <h2 style={{ fontSize: '22px', fontWeight: 'bold', marginBottom: '10px' }}>INVOICE</h2>
+            <h2 style={{ fontSize: '22px', fontWeight: 'bold', marginBottom: '10px', color: '#c53030' }}>INVOICE</h2>
             {order.tracking_number && (
               <div style={{ display: 'inline-block' }}>
                 <Barcode value={order.tracking_number} />
@@ -112,7 +125,35 @@ export const OrderInvoice = forwardRef<HTMLDivElement, OrderInvoiceProps>(
           </div>
         </div>
 
-        {/* Billing & Shipping Info */}
+        {/* Courier Banner */}
+        {courier.name && (
+          <div
+            style={{
+              background: '#1a2744',
+              color: '#fff',
+              display: 'grid',
+              gridTemplateColumns: '1fr 1fr',
+              borderRadius: '6px',
+              marginBottom: '20px',
+              overflow: 'hidden',
+            }}
+          >
+            <div style={{ padding: '12px 20px', borderRight: '1px solid rgba(255,255,255,0.2)' }}>
+              <p style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px', margin: '0 0 4px 0', opacity: 0.8 }}>
+                Delivery By
+              </p>
+              <p style={{ fontSize: '20px', fontWeight: 'bold', margin: 0 }}>{courier.name}</p>
+            </div>
+            <div style={{ padding: '12px 20px' }}>
+              <p style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px', margin: '0 0 4px 0', opacity: 0.8 }}>
+                {courier.name} ID
+              </p>
+              <p style={{ fontSize: '20px', fontWeight: 'bold', margin: 0 }}>{courier.id}</p>
+            </div>
+          </div>
+        )}
+
+        {/* Billing & Invoice Info */}
         <div
           style={{
             display: 'grid',
@@ -122,7 +163,6 @@ export const OrderInvoice = forwardRef<HTMLDivElement, OrderInvoiceProps>(
             fontSize: '14px',
           }}
         >
-          {/* Billing To */}
           <div>
             <h3 style={{ fontWeight: 'bold', marginBottom: '10px', fontSize: '15px' }}>Billing To</h3>
             <p style={{ color: '#c53030', margin: '4px 0', fontSize: '14px' }}>{order.shipping_name}</p>
@@ -134,7 +174,6 @@ export const OrderInvoice = forwardRef<HTMLDivElement, OrderInvoiceProps>(
             </p>
           </div>
 
-          {/* Invoice Details */}
           <div style={{ fontSize: '14px' }}>
             <p style={{ margin: '4px 0' }}>
               <span style={{ fontWeight: '600' }}>Invoice No:</span> {order.order_number.replace('ORD-', 'M')}
@@ -148,15 +187,17 @@ export const OrderInvoice = forwardRef<HTMLDivElement, OrderInvoiceProps>(
             </p>
           </div>
 
-          {/* Delivery Info */}
           <div style={{ fontSize: '14px' }}>
-            <p style={{ margin: '4px 0' }}>
-              <span style={{ fontWeight: '600' }}>Delivery:</span> Steadfast
-            </p>
-            <p style={{ margin: '4px 0' }}>
-              <span style={{ fontWeight: '600' }}>Steadfast ID:</span>{' '}
-              {order.steadfast_consignment_id || 'Pending'}
-            </p>
+            {courier.name && (
+              <>
+                <p style={{ margin: '4px 0' }}>
+                  <span style={{ fontWeight: '600' }}>Delivery:</span> {courier.name}
+                </p>
+                <p style={{ margin: '4px 0' }}>
+                  <span style={{ fontWeight: '600' }}>{courier.name} ID:</span> {courier.id}
+                </p>
+              </>
+            )}
           </div>
         </div>
 
@@ -213,13 +254,11 @@ export const OrderInvoice = forwardRef<HTMLDivElement, OrderInvoiceProps>(
 
         {/* Notes & Totals */}
         <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-          {/* Notes */}
           <div style={{ color: '#c53030', fontSize: '14px', maxWidth: '300px' }}>
             {order.invoice_note && <p style={{ fontWeight: '500', margin: '0 0 4px 0' }}>Note: {order.invoice_note}</p>}
             {order.notes && !order.invoice_note && <p style={{ fontWeight: '500' }}>Note: {order.notes}</p>}
           </div>
 
-          {/* Totals */}
           <div style={{ textAlign: 'right', minWidth: '200px', fontSize: '14px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
               <span>Sub Total</span>
