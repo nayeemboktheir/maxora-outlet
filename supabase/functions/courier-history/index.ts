@@ -59,13 +59,39 @@ serve(async (req) => {
       );
     }
 
-    // Get API key from environment
-    const BDCOURIER_API_KEY = Deno.env.get('BDCOURIER_API_KEY');
-    
+    // Resolve API key: prefer admin_settings (updated from admin UI), fallback to secret
+    let BDCOURIER_API_KEY = '';
+
+    try {
+      const { data: settingData, error: settingError } = await supabase
+        .from('admin_settings')
+        .select('value')
+        .eq('key', 'bdcourier_api_key')
+        .maybeSingle();
+
+      if (settingError) {
+        console.warn('Could not read bdcourier_api_key from admin_settings:', settingError.message);
+      }
+
+      if (settingData?.value) {
+        BDCOURIER_API_KEY = settingData.value;
+        console.log('Using BD Courier API key from admin_settings');
+      }
+    } catch (settingsReadError) {
+      console.warn('Failed reading bdcourier_api_key from admin_settings:', settingsReadError);
+    }
+
     if (!BDCOURIER_API_KEY) {
-      console.error('BDCOURIER_API_KEY secret is not configured');
+      BDCOURIER_API_KEY = Deno.env.get('BDCOURIER_API_KEY') || '';
+      if (BDCOURIER_API_KEY) {
+        console.log('Using BD Courier API key from secret');
+      }
+    }
+
+    if (!BDCOURIER_API_KEY) {
+      console.error('BD Courier API key not configured in admin_settings or secret');
       return new Response(
-        JSON.stringify({ error: 'BD Courier API key not configured. Please add the BDCOURIER_API_KEY secret.' }),
+        JSON.stringify({ error: 'BD Courier API key not configured. Please save API key in Admin → Courier Settings.' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
