@@ -230,15 +230,11 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Get access token
-    let accessToken: string;
-    try {
-      accessToken = await getAccessToken(baseUrl, clientId, clientSecret, clientContext);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Auth failed';
+    // Keep credentials header-based per Carrybee v2 docs
+    if (!clientId || !clientSecret || !clientContext) {
       return new Response(
-        JSON.stringify({ error: `Carrybee authentication failed: ${msg}` }),
-        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        JSON.stringify({ error: 'Carrybee credentials not configured. Please add Client ID, Client Secret and Client Context in Admin → Courier Settings → Carrybee tab.' }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
