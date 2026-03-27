@@ -613,7 +613,7 @@ export default function AdminProducts() {
                     type="number"
                     step="0.01"
                     value={formData.original_price}
-                    onChange={(e) => setFormData({ ...formData, original_price: parseFloat(e.target.value) })}
+                    onChange={(e) => setFormData({ ...formData, original_price: parseFloat(e.target.value) || 0 })}
                   />
                 </div>
                 <div className="space-y-2">
@@ -622,7 +622,7 @@ export default function AdminProducts() {
                     id="stock"
                     type="number"
                     value={formData.stock}
-                    onChange={(e) => setFormData({ ...formData, stock: parseInt(e.target.value) })}
+                    onChange={(e) => setFormData({ ...formData, stock: parseInt(e.target.value) || 0 })}
                     required
                   />
                 </div>
