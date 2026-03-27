@@ -67,14 +67,17 @@ const Barcode = ({ value }: { value: string }) => {
 };
 
 function detectCourier(order: Order, courierProvider?: string): { name: string; id: string } {
-  if (courierProvider === 'carrybee') {
-    return { name: 'Carrybee', id: order.tracking_number || 'Pending' };
+  const tn = order.tracking_number || '';
+  const isCarrybee = courierProvider === 'carrybee' || /^F\d{4}[A-Z0-9]+$/i.test(tn);
+  
+  if (isCarrybee) {
+    return { name: 'Carrybee', id: tn || 'Pending' };
   }
   if (courierProvider === 'steadfast' || order.steadfast_consignment_id) {
-    return { name: 'Steadfast', id: order.steadfast_consignment_id || order.tracking_number || 'Pending' };
+    return { name: 'Steadfast', id: order.steadfast_consignment_id || tn || 'Pending' };
   }
-  if (order.tracking_number) {
-    return { name: 'Courier', id: order.tracking_number };
+  if (tn) {
+    return { name: 'Steadfast', id: tn };
   }
   return { name: '', id: '' };
 }
