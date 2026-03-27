@@ -1261,6 +1261,15 @@ export default function AdminOrders() {
                     <Send className="h-4 w-4" />
                     {bulkSending ? 'Sending...' : `Send ${selectedOrderIds.size} to Steadfast`}
                   </Button>
+                  <Button
+                    variant="outline"
+                    onClick={handleBulkSendToCarrybee}
+                    disabled={bulkSendingCarrybee}
+                    className="gap-2"
+                  >
+                    <Send className="h-4 w-4" />
+                    {bulkSendingCarrybee ? 'Sending...' : `Send ${selectedOrderIds.size} to Carrybee`}
+                  </Button>
                 </>
               )}
             </div>
