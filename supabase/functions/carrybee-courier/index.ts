@@ -41,96 +41,146 @@ async function getCredentials(supabase: any) {
   };
 }
 
-async function getAccessToken(baseUrl: string, clientId: string, clientSecret: string, clientContext: string): Promise<string> {
-  const authPaths = ['/api/auth/token', '/api/v1/auth/token', '/oauth/token'];
-  const payload = {
-    client_id: clientId,
-    client_secret: clientSecret,
-    client_context: clientContext,
-    grant_type: 'client_credentials',
+async function safeJsonParse(rawText: string): Promise<Record<string, unknown>> {
+  try {
+    return rawText ? JSON.parse(rawText) : {};
+  } catch {
+    return { raw: rawText };
+  }
+}
+
+function buildCarrybeeHeaders(clientId: string, clientSecret: string, clientContext: string): HeadersInit {
+  return {
+    'Content-Type': 'application/json',
+    'Accept': 'application/json',
+    'Client-ID': clientId,
+    'Client-Secret': clientSecret,
+    'Client-Context': clientContext,
   };
+}
 
-  let lastError = 'Failed to get Carrybee access token';
+async function fetchDefaultStoreId(
+  baseUrl: string,
+  clientId: string,
+  clientSecret: string,
+  clientContext: string,
+): Promise<string> {
+  const response = await fetch(`${baseUrl}/api/v2/stores`, {
+    method: 'GET',
+    headers: buildCarrybeeHeaders(clientId, clientSecret, clientContext),
+  });
 
-  for (const path of authPaths) {
-    try {
-      const response = await fetch(`${baseUrl}${path}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
+  const rawText = await response.text();
+  const data = await safeJsonParse(rawText);
 
-      const rawText = await response.text();
-      let data: Record<string, unknown> = {};
-
-      try {
-        data = rawText ? JSON.parse(rawText) : {};
-      } catch {
-        data = {};
-      }
-
-      const accessToken =
-        (typeof data.access_token === 'string' && data.access_token) ||
-        (typeof data.token === 'string' && data.token) ||
-        '';
-
-      if (response.ok && accessToken) {
-        console.log(`Carrybee token success via ${path}`);
-        return accessToken;
-      }
-
-      const message =
-        (typeof data.message === 'string' && data.message) ||
-        (typeof data.error === 'string' && data.error) ||
-        rawText ||
-        `HTTP ${response.status}`;
-
-      lastError = `${path}: ${message.substring(0, 200)}`;
-
-      if (response.ok) {
-        continue;
-      }
-    } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown auth request error';
-      lastError = `${path}: ${errorMessage}`;
-    }
+  if (!response.ok) {
+    const message =
+      (typeof data.message === 'string' && data.message) ||
+      (typeof data.error === 'string' && data.error) ||
+      (typeof data.raw === 'string' && data.raw) ||
+      `HTTP ${response.status}`;
+    throw new Error(`Failed to load Carrybee stores: ${message}`);
   }
 
-  throw new Error(lastError);
+  const stores = ((data.data as Record<string, unknown> | undefined)?.stores as Record<string, unknown>[] | undefined) || [];
+  const preferred =
+    stores.find((s) => s.is_default_pickup_store === true && s.is_active === true && s.is_approved === true) ||
+    stores.find((s) => s.is_active === true && s.is_approved === true) ||
+    stores[0];
+
+  const storeId = typeof preferred?.id === 'string' ? preferred.id : '';
+  if (!storeId) {
+    throw new Error('No Carrybee store found. Please create/approve a store in Carrybee and set Store ID in Admin Courier Settings.');
+  }
+
+  return storeId;
+}
+
+async function resolveAddressDetails(
+  address: string,
+  baseUrl: string,
+  clientId: string,
+  clientSecret: string,
+  clientContext: string,
+): Promise<{ city_id: number; zone_id: number; area_id?: number }> {
+  const response = await fetch(`${baseUrl}/api/v2/address-details`, {
+    method: 'POST',
+    headers: buildCarrybeeHeaders(clientId, clientSecret, clientContext),
+    body: JSON.stringify({ query: address }),
+  });
+
+  const rawText = await response.text();
+  const data = await safeJsonParse(rawText);
+
+  if (!response.ok) {
+    const message =
+      (typeof data.message === 'string' && data.message) ||
+      (typeof data.error === 'string' && data.error) ||
+      (typeof data.raw === 'string' && data.raw) ||
+      `HTTP ${response.status}`;
+    throw new Error(`Address lookup failed: ${message}`);
+  }
+
+  const details = (data.data as Record<string, unknown> | undefined) || {};
+  const city_id = Number(details.city_id);
+  const zone_id = Number(details.zone_id);
+  const area_id = details.area_id !== undefined && details.area_id !== null ? Number(details.area_id) : undefined;
+
+  if (!Number.isFinite(city_id) || !Number.isFinite(zone_id)) {
+    throw new Error('Carrybee address lookup did not return valid city/zone id');
+  }
+
+  return { city_id, zone_id, area_id: Number.isFinite(area_id) ? area_id : undefined };
 }
 
 async function sendToCarrybee(
   order: CarrybeeOrderRequest,
   baseUrl: string,
-  accessToken: string,
-  storeId: string
+  clientId: string,
+  clientSecret: string,
+  clientContext: string,
+  storeId: string,
 ): Promise<{ success: boolean; data?: Record<string, unknown>; error?: string }> {
   try {
-    const response = await fetch(`${baseUrl}/api/v1/orders`, {
+    const recipientAddress = order.recipient_address?.trim() || '';
+    if (recipientAddress.length < 10) {
+      return { success: false, error: 'Recipient address must be at least 10 characters for Carrybee' };
+    }
+
+    const location = await resolveAddressDetails(recipientAddress, baseUrl, clientId, clientSecret, clientContext);
+
+    const finalStoreId = order.store_id || storeId || await fetchDefaultStoreId(baseUrl, clientId, clientSecret, clientContext);
+
+    const payload: Record<string, unknown> = {
+      store_id: finalStoreId,
+      merchant_order_id: order.invoice,
+      delivery_type: 1,
+      product_type: 1,
+      recipient_phone: order.recipient_phone,
+      recipient_name: order.recipient_name,
+      recipient_address: recipientAddress,
+      city_id: location.city_id,
+      zone_id: location.zone_id,
+      special_instruction: order.note || null,
+      product_description: order.note || null,
+      item_weight: 500,
+      item_quantity: 1,
+      collectable_amount: Math.max(0, Math.round(Number(order.cod_amount || 0))),
+      is_closed: false,
+    };
+
+    if (location.area_id) {
+      payload.area_id = location.area_id;
+    }
+
+    const response = await fetch(`${baseUrl}/api/v2/orders`, {
       method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        store_id: order.store_id || storeId,
-        invoice_number: order.invoice,
-        recipient_name: order.recipient_name,
-        recipient_phone: order.recipient_phone,
-        recipient_address: order.recipient_address,
-        cod_amount: order.cod_amount,
-        note: order.note || '',
-      }),
+      headers: buildCarrybeeHeaders(clientId, clientSecret, clientContext),
+      body: JSON.stringify(payload),
     });
 
     const rawText = await response.text();
-    let data: Record<string, unknown> = {};
-
-    try {
-      data = rawText ? JSON.parse(rawText) : {};
-    } catch {
-      data = { raw: rawText };
-    }
+    const data = await safeJsonParse(rawText);
 
     if (!response.ok) {
       return {
@@ -175,20 +225,8 @@ Deno.serve(async (req) => {
 
     if (!clientId || !clientSecret || !clientContext) {
       return new Response(
-        JSON.stringify({ error: 'Carrybee credentials not configured. Please add them in Admin → Courier Settings → Carrybee tab.' }),
+        JSON.stringify({ error: 'Carrybee credentials not configured. Please add Client ID, Client Secret and Client Context in Admin → Courier Settings → Carrybee tab.' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    // Get access token
-    let accessToken: string;
-    try {
-      accessToken = await getAccessToken(baseUrl, clientId, clientSecret, clientContext);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Auth failed';
-      return new Response(
-        JSON.stringify({ error: `Carrybee authentication failed: ${msg}` }),
-        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
@@ -201,12 +239,20 @@ Deno.serve(async (req) => {
       const results: { orderId: string; success: boolean; tracking_code?: string; error?: string }[] = [];
 
       for (const order of body.orders as CarrybeeOrderRequest[]) {
-        const result = await sendToCarrybee(order, baseUrl, accessToken, storeId);
+        const result = await sendToCarrybee(order, baseUrl, clientId, clientSecret, clientContext, storeId);
 
         if (result.success && result.data) {
-          const trackingCode = result.data.tracking_code || result.data.order_id || result.data.id;
+          const nestedData = (result.data.data as Record<string, unknown> | undefined) || {};
+          const nestedOrder = (nestedData.order as Record<string, unknown> | undefined) || {};
+          const trackingCode =
+            (typeof nestedOrder.consignment_id === 'string' && nestedOrder.consignment_id) ||
+            (typeof result.data.consignment_id === 'string' && result.data.consignment_id) ||
+            (typeof result.data.tracking_code === 'string' && result.data.tracking_code) ||
+            (typeof result.data.order_id === 'string' && result.data.order_id) ||
+            (typeof result.data.id === 'string' && result.data.id) ||
+            '';
 
-          if (order.orderId) {
+          if (trackingCode && order.orderId) {
             await supabase
               .from('orders')
               .update({
@@ -216,7 +262,7 @@ Deno.serve(async (req) => {
               .eq('id', order.orderId);
           }
 
-          results.push({ orderId: order.orderId, success: true, tracking_code: trackingCode });
+          results.push({ orderId: order.orderId, success: true, tracking_code: trackingCode || undefined });
         } else {
           results.push({ orderId: order.orderId, success: false, error: result.error });
         }
@@ -246,7 +292,7 @@ Deno.serve(async (req) => {
       );
     }
 
-    const result = await sendToCarrybee(order, baseUrl, accessToken, storeId);
+    const result = await sendToCarrybee(order, baseUrl, clientId, clientSecret, clientContext, storeId);
 
     if (!result.success) {
       return new Response(
@@ -255,7 +301,15 @@ Deno.serve(async (req) => {
       );
     }
 
-    const trackingCode = result.data?.tracking_code || result.data?.order_id || result.data?.id;
+    const nestedData = (result.data?.data as Record<string, unknown> | undefined) || {};
+    const nestedOrder = (nestedData.order as Record<string, unknown> | undefined) || {};
+    const trackingCode =
+      (typeof nestedOrder.consignment_id === 'string' && nestedOrder.consignment_id) ||
+      (typeof result.data?.consignment_id === 'string' && result.data.consignment_id) ||
+      (typeof result.data?.tracking_code === 'string' && result.data.tracking_code) ||
+      (typeof result.data?.order_id === 'string' && result.data.order_id) ||
+      (typeof result.data?.id === 'string' && result.data.id) ||
+      '';
 
     if (trackingCode && order.orderId) {
       await supabase
