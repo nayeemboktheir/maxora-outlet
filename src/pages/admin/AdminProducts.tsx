@@ -347,17 +347,26 @@ export default function AdminProducts() {
   };
 
   const saveVariations = async (productId: string) => {
-    // Delete existing variations
-    await supabase
+    // Delete existing variations first
+    const { error: deleteError } = await supabase
       .from('product_variations')
       .delete()
       .eq('product_id', productId);
+    
+    if (deleteError) {
+      console.error('Failed to delete existing variations:', deleteError);
+      toast.error('Failed to update variations');
+      return;
+    }
+
+    // Wait a moment to ensure delete is committed
+    await new Promise(resolve => setTimeout(resolve, 200));
     
     // Insert new variations
     if (hasVariations && variations.length > 0) {
       const validVariations = variations.filter((v) => v.name && v.price > 0);
 
-      // Dedupe by normalized name before saving (prevents accidental duplicates in UI)
+      // Dedupe by normalized name before saving
       const uniqueValidVariations = Array.from(
         new Map(
           validVariations
