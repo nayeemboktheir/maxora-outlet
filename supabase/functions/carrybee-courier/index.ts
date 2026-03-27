@@ -292,7 +292,7 @@ Deno.serve(async (req) => {
       );
     }
 
-    const result = await sendToCarrybee(order, baseUrl, accessToken, storeId);
+    const result = await sendToCarrybee(order, baseUrl, clientId, clientSecret, clientContext, storeId);
 
     if (!result.success) {
       return new Response(
@@ -301,7 +301,15 @@ Deno.serve(async (req) => {
       );
     }
 
-    const trackingCode = result.data?.tracking_code || result.data?.order_id || result.data?.id;
+    const nestedData = (result.data?.data as Record<string, unknown> | undefined) || {};
+    const nestedOrder = (nestedData.order as Record<string, unknown> | undefined) || {};
+    const trackingCode =
+      (typeof nestedOrder.consignment_id === 'string' && nestedOrder.consignment_id) ||
+      (typeof result.data?.consignment_id === 'string' && result.data.consignment_id) ||
+      (typeof result.data?.tracking_code === 'string' && result.data.tracking_code) ||
+      (typeof result.data?.order_id === 'string' && result.data.order_id) ||
+      (typeof result.data?.id === 'string' && result.data.id) ||
+      '';
 
     if (trackingCode && order.orderId) {
       await supabase
