@@ -104,6 +104,8 @@ async function sendToCarrybee(
 }
 
 Deno.serve(async (req) => {
+  console.log('Carrybee courier function invoked, method:', req.method);
+  
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
@@ -116,6 +118,7 @@ Deno.serve(async (req) => {
   }
 
   try {
+    console.log('Starting Carrybee order processing...');
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
