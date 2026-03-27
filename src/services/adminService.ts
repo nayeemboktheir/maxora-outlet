@@ -141,19 +141,28 @@ export const updateProduct = async (id: string, updates: Partial<{
   name: string;
   slug: string;
   description: string;
+  short_description: string;
+  long_description: string;
   price: number;
-  original_price: number;
+  original_price: number | null;
   category_id: string;
   stock: number;
   images: string[];
+  video_url: string | null;
   tags: string[];
   is_featured: boolean;
   is_new: boolean;
   is_active: boolean;
 }>) => {
+  // Clean undefined values to null for proper DB updates
+  const cleanedUpdates: Record<string, any> = {};
+  for (const [key, value] of Object.entries(updates)) {
+    cleanedUpdates[key] = value === undefined ? null : value;
+  }
+  
   const { data, error } = await supabase
     .from('products')
-    .update(updates)
+    .update(cleanedUpdates)
     .eq('id', id)
     .select()
     .single();
