@@ -165,6 +165,8 @@ export default function AdminOrders() {
   const [sendingToSteadfast, setSendingToSteadfast] = useState(false);
   const [selectedOrderIds, setSelectedOrderIds] = useState<Set<string>>(new Set());
   const [bulkSending, setBulkSending] = useState(false);
+  const [bulkSendingCarrybee, setBulkSendingCarrybee] = useState(false);
+  const [sendingToCarrybee, setSendingToCarrybee] = useState(false);
   const [bulkStatusChanging, setBulkStatusChanging] = useState(false);
   const [isInvoiceDialogOpen, setIsInvoiceDialogOpen] = useState(false);
   const [isStickerDialogOpen, setIsStickerDialogOpen] = useState(false);
@@ -739,6 +741,116 @@ export default function AdminOrders() {
     }
   };
 
+  const handleSendToCarrybee = async (order: Order) => {
+    setSendingToCarrybee(true);
+    try {
+      const fullAddress = `${order.shipping_street}, ${order.shipping_district}, ${order.shipping_city}${order.shipping_postal_code ? `, ${order.shipping_postal_code}` : ''}`;
+      const noteToSend = order.steadfast_note || order.notes || `Order items: ${order.order_items.map(i => `${i.product_name}${i.variation_name ? ` (${i.variation_name})` : ''} x${i.quantity}`).join(', ')}`;
+
+      const { data, error } = await supabase.functions.invoke('carrybee-courier', {
+        body: {
+          orderId: order.id,
+          invoice: order.order_number,
+          recipient_name: order.shipping_name,
+          recipient_phone: order.shipping_phone,
+          recipient_address: fullAddress,
+          cod_amount: order.payment_method === 'cod' ? Number(order.total) : 0,
+          note: noteToSend,
+        },
+      });
+
+      if (error) {
+        console.error('Carrybee error:', error);
+        toast.error(error.message || 'Failed to send order to Carrybee');
+        return;
+      }
+
+      if (data?.error) {
+        toast.error(data.error);
+        return;
+      }
+
+      toast.success('Order sent to Carrybee successfully!');
+      if (data?.tracking_code) {
+        setTrackingNumber(data.tracking_code);
+        setOrders(prev => prev.map(o =>
+          o.id === order.id ? { ...o, tracking_number: data.tracking_code } : o
+        ));
+        if (selectedOrder?.id === order.id) {
+          setSelectedOrder(prev => prev ? { ...prev, tracking_number: data.tracking_code } : prev);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to send to Carrybee:', error);
+      toast.error('Failed to send order to Carrybee');
+    } finally {
+      setSendingToCarrybee(false);
+    }
+  };
+
+  const handleBulkSendToCarrybee = async () => {
+    if (selectedOrderIds.size === 0) {
+      toast.error('Please select orders to send');
+      return;
+    }
+
+    setBulkSendingCarrybee(true);
+    try {
+      const ordersToSend = orders.filter(o => selectedOrderIds.has(o.id));
+      const orderPayloads = ordersToSend.map(order => {
+        const fullAddress = `${order.shipping_street}, ${order.shipping_district}, ${order.shipping_city}${order.shipping_postal_code ? `, ${order.shipping_postal_code}` : ''}`;
+        const noteToSend = order.steadfast_note || order.notes || `Order items: ${order.order_items.map(i => `${i.product_name}${i.variation_name ? ` (${i.variation_name})` : ''} x${i.quantity}`).join(', ')}`;
+        return {
+          orderId: order.id,
+          invoice: order.order_number,
+          recipient_name: order.shipping_name,
+          recipient_phone: order.shipping_phone,
+          recipient_address: fullAddress,
+          cod_amount: order.payment_method === 'cod' ? Number(order.total) : 0,
+          note: noteToSend,
+        };
+      });
+
+      const { data, error } = await supabase.functions.invoke('carrybee-courier', {
+        body: { orders: orderPayloads },
+      });
+
+      if (error) {
+        toast.error(error.message || 'Failed to send orders to Carrybee');
+        return;
+      }
+
+      if (data?.results) {
+        const successCount = data.results.filter((r: { success: boolean }) => r.success).length;
+        const failCount = data.results.filter((r: { success: boolean }) => !r.success).length;
+        if (failCount > 0) {
+          toast.warning(`Sent ${successCount} orders, ${failCount} failed`);
+        } else {
+          toast.success(`Successfully sent ${successCount} orders to Carrybee`);
+        }
+      }
+
+      setSelectedOrderIds(new Set());
+      if (data?.results) {
+        setOrders(prev => {
+          const updated = [...prev];
+          data.results.forEach((r: any) => {
+            if (r.success && r.tracking_code) {
+              const idx = updated.findIndex(o => o.id === r.orderId);
+              if (idx !== -1) updated[idx] = { ...updated[idx], tracking_number: r.tracking_code };
+            }
+          });
+          return updated;
+        });
+      }
+    } catch (error) {
+      console.error('Failed to bulk send to Carrybee:', error);
+      toast.error('Failed to send orders to Carrybee');
+    } finally {
+      setBulkSendingCarrybee(false);
+    }
+  };
+
   const handleBulkStatusChange = async (newStatus: string) => {
     if (selectedOrderIds.size === 0) {
       toast.error('Please select orders to update');
@@ -1148,6 +1260,15 @@ export default function AdminOrders() {
                   >
                     <Send className="h-4 w-4" />
                     {bulkSending ? 'Sending...' : `Send ${selectedOrderIds.size} to Steadfast`}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={handleBulkSendToCarrybee}
+                    disabled={bulkSendingCarrybee}
+                    className="gap-2"
+                  >
+                    <Send className="h-4 w-4" />
+                    {bulkSendingCarrybee ? 'Sending...' : `Send ${selectedOrderIds.size} to Carrybee`}
                   </Button>
                 </>
               )}
