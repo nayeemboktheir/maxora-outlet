@@ -42,24 +42,61 @@ async function getCredentials(supabase: any) {
 }
 
 async function getAccessToken(baseUrl: string, clientId: string, clientSecret: string, clientContext: string): Promise<string> {
-  const response = await fetch(`${baseUrl}/api/auth/token`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      client_id: clientId,
-      client_secret: clientSecret,
-      client_context: clientContext,
-      grant_type: 'client_credentials',
-    }),
-  });
+  const authPaths = ['/api/auth/token', '/api/v1/auth/token', '/oauth/token'];
+  const payload = {
+    client_id: clientId,
+    client_secret: clientSecret,
+    client_context: clientContext,
+    grant_type: 'client_credentials',
+  };
 
-  const data = await response.json();
+  let lastError = 'Failed to get Carrybee access token';
 
-  if (!response.ok || !data.access_token) {
-    throw new Error(data.message || 'Failed to get Carrybee access token');
+  for (const path of authPaths) {
+    try {
+      const response = await fetch(`${baseUrl}${path}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      const rawText = await response.text();
+      let data: Record<string, unknown> = {};
+
+      try {
+        data = rawText ? JSON.parse(rawText) : {};
+      } catch {
+        data = {};
+      }
+
+      const accessToken =
+        (typeof data.access_token === 'string' && data.access_token) ||
+        (typeof data.token === 'string' && data.token) ||
+        '';
+
+      if (response.ok && accessToken) {
+        console.log(`Carrybee token success via ${path}`);
+        return accessToken;
+      }
+
+      const message =
+        (typeof data.message === 'string' && data.message) ||
+        (typeof data.error === 'string' && data.error) ||
+        rawText ||
+        `HTTP ${response.status}`;
+
+      lastError = `${path}: ${message.substring(0, 200)}`;
+
+      if (response.ok) {
+        continue;
+      }
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown auth request error';
+      lastError = `${path}: ${errorMessage}`;
+    }
   }
 
-  return data.access_token;
+  throw new Error(lastError);
 }
 
 async function sendToCarrybee(
@@ -67,7 +104,7 @@ async function sendToCarrybee(
   baseUrl: string,
   accessToken: string,
   storeId: string
-): Promise<{ success: boolean; data?: any; error?: string }> {
+): Promise<{ success: boolean; data?: Record<string, unknown>; error?: string }> {
   try {
     const response = await fetch(`${baseUrl}/api/v1/orders`, {
       method: 'POST',
@@ -86,12 +123,23 @@ async function sendToCarrybee(
       }),
     });
 
-    const data = await response.json();
+    const rawText = await response.text();
+    let data: Record<string, unknown> = {};
+
+    try {
+      data = rawText ? JSON.parse(rawText) : {};
+    } catch {
+      data = { raw: rawText };
+    }
 
     if (!response.ok) {
       return {
         success: false,
-        error: data.message || data.error || 'Failed to create Carrybee order',
+        error:
+          (typeof data.message === 'string' && data.message) ||
+          (typeof data.error === 'string' && data.error) ||
+          (typeof data.raw === 'string' && data.raw) ||
+          'Failed to create Carrybee order',
         data,
       };
     }
