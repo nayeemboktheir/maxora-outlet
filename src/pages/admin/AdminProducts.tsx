@@ -347,43 +347,94 @@ export default function AdminProducts() {
   };
 
   const saveVariations = async (productId: string) => {
-    // Delete existing variations
-    await supabase
-      .from('product_variations')
-      .delete()
-      .eq('product_id', productId);
+    if (!hasVariations || variations.length === 0) {
+      // If no variations, just delete all existing ones
+      const { error: deleteError } = await supabase
+        .from('product_variations')
+        .delete()
+        .eq('product_id', productId);
+      if (deleteError) console.error('Delete variations error:', deleteError);
+      return;
+    }
+
+    const validVariations = variations.filter((v) => v.name && v.price > 0);
     
+    // Dedupe by normalized name
+    const uniqueValidVariations = Array.from(
+      new Map(
+        validVariations.map((v) => [String(v.name).trim().toLowerCase(), v])
+      ).values()
+    );
+
+    if (uniqueValidVariations.length === 0) return;
+
+    // Get existing variations from DB
+    const { data: existingVars } = await supabase
+      .from('product_variations')
+      .select('id, name')
+      .eq('product_id', productId);
+
+    const existingMap = new Map(
+      (existingVars || []).map((v) => [v.name.trim().toLowerCase(), v.id])
+    );
+
+    // Separate into updates and inserts
+    const toUpdate: Array<{ id: string; data: any }> = [];
+    const toInsert: Array<any> = [];
+    const usedExistingIds = new Set<string>();
+
+    for (let idx = 0; idx < uniqueValidVariations.length; idx++) {
+      const v = uniqueValidVariations[idx];
+      const normalizedName = String(v.name).trim().toLowerCase();
+      const existingId = existingMap.get(normalizedName);
+      
+      const varData = {
+        name: v.name,
+        price: v.price,
+        original_price: v.original_price || null,
+        stock: v.stock,
+        sort_order: idx + 1,
+        is_active: v.is_active,
+      };
+
+      if (existingId) {
+        toUpdate.push({ id: existingId, data: varData });
+        usedExistingIds.add(existingId);
+      } else {
+        toInsert.push({ product_id: productId, ...varData });
+      }
+    }
+
+    // Delete variations that are no longer in the list
+    const toDeleteIds = (existingVars || [])
+      .filter((v) => !usedExistingIds.has(v.id))
+      .map((v) => v.id);
+
+    if (toDeleteIds.length > 0) {
+      const { error } = await supabase
+        .from('product_variations')
+        .delete()
+        .in('id', toDeleteIds);
+      if (error) console.error('Delete removed variations error:', error);
+    }
+
+    // Update existing variations
+    for (const item of toUpdate) {
+      const { error } = await supabase
+        .from('product_variations')
+        .update(item.data)
+        .eq('id', item.id);
+      if (error) console.error('Update variation error:', error);
+    }
+
     // Insert new variations
-    if (hasVariations && variations.length > 0) {
-      const validVariations = variations.filter((v) => v.name && v.price > 0);
-
-      // Dedupe by normalized name before saving (prevents accidental duplicates in UI)
-      const uniqueValidVariations = Array.from(
-        new Map(
-          validVariations
-            .map((v) => [String(v.name).trim().toLowerCase(), v])
-        ).values()
-      );
-
-      if (uniqueValidVariations.length > 0) {
-        const { error } = await supabase
-          .from('product_variations')
-          .insert(
-            uniqueValidVariations.map((v, idx) => ({
-              product_id: productId,
-              name: v.name,
-              price: v.price,
-              original_price: v.original_price || null,
-              stock: v.stock,
-              sort_order: idx + 1,
-              is_active: v.is_active,
-            }))
-          );
-        
-        if (error) {
-          console.error('Failed to save variations:', error);
-          toast.error('Failed to save variations');
-        }
+    if (toInsert.length > 0) {
+      const { error } = await supabase
+        .from('product_variations')
+        .insert(toInsert);
+      if (error) {
+        console.error('Insert variations error:', error);
+        toast.error('Failed to save new variations');
       }
     }
   };
@@ -413,8 +464,11 @@ export default function AdminProducts() {
 
       let productId: string;
 
+      console.log('Saving product data:', JSON.stringify(productData));
+      
       if (editingProduct) {
-        await updateProduct(editingProduct.id, productData);
+        const result = await updateProduct(editingProduct.id, productData);
+        console.log('Update result:', JSON.stringify(result));
         productId = editingProduct.id;
         toast.success('Product updated successfully');
       } else {
@@ -599,7 +653,7 @@ export default function AdminProducts() {
                     type="number"
                     step="0.01"
                     value={formData.price}
-                    onChange={(e) => setFormData({ ...formData, price: parseFloat(e.target.value) })}
+                    onChange={(e) => setFormData({ ...formData, price: parseFloat(e.target.value) || 0 })}
                     required
                   />
                 </div>
@@ -610,7 +664,7 @@ export default function AdminProducts() {
                     type="number"
                     step="0.01"
                     value={formData.original_price}
-                    onChange={(e) => setFormData({ ...formData, original_price: parseFloat(e.target.value) })}
+                    onChange={(e) => setFormData({ ...formData, original_price: parseFloat(e.target.value) || 0 })}
                   />
                 </div>
                 <div className="space-y-2">
@@ -619,7 +673,7 @@ export default function AdminProducts() {
                     id="stock"
                     type="number"
                     value={formData.stock}
-                    onChange={(e) => setFormData({ ...formData, stock: parseInt(e.target.value) })}
+                    onChange={(e) => setFormData({ ...formData, stock: parseInt(e.target.value) || 0 })}
                     required
                   />
                 </div>
