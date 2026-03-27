@@ -413,8 +413,11 @@ export default function AdminProducts() {
 
       let productId: string;
 
+      console.log('Saving product data:', JSON.stringify(productData));
+      
       if (editingProduct) {
-        await updateProduct(editingProduct.id, productData);
+        const result = await updateProduct(editingProduct.id, productData);
+        console.log('Update result:', JSON.stringify(result));
         productId = editingProduct.id;
         toast.success('Product updated successfully');
       } else {
