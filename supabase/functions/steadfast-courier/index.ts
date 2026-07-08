@@ -166,6 +166,7 @@ Deno.serve(async (req) => {
           const consignmentData = result.data as { consignment?: { consignment_id?: string; tracking_code?: string } };
           const consignmentId = consignmentData.consignment?.consignment_id;
           const trackingCode = consignmentData.consignment?.tracking_code || consignmentId;
+          const trackingUrl = extractTrackingUrl(result.data);
           
           // Update order with tracking and consignment ID
           if (order.orderId) {
@@ -174,12 +175,13 @@ Deno.serve(async (req) => {
               .update({ 
                 tracking_number: trackingCode, 
                 steadfast_consignment_id: consignmentId,
+                tracking_url: trackingUrl,
                 status: 'processing' 
               })
               .eq('id', order.orderId);
           }
           
-          results.push({ orderId: order.orderId, success: true, tracking_code: trackingCode, consignment_id: consignmentId });
+          results.push({ orderId: order.orderId, success: true, tracking_code: trackingCode, consignment_id: consignmentId, tracking_url: trackingUrl });
         } else {
           results.push({ orderId: order.orderId, success: false, error: result.error });
         }
