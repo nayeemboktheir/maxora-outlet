@@ -343,11 +343,14 @@ Deno.serve(async (req) => {
       (typeof result.data?.id === 'string' && result.data.id) ||
       '';
 
+    const trackingUrl = buildCarrybeeTrackingUrl(result.data, trackingCode as string);
+
     if (trackingCode && order.orderId) {
       await supabase
         .from('orders')
         .update({
           tracking_number: trackingCode,
+          tracking_url: trackingUrl,
           status: 'processing',
         })
         .eq('id', order.orderId);
@@ -358,6 +361,7 @@ Deno.serve(async (req) => {
         success: true,
         message: 'Order sent to Carrybee successfully',
         tracking_code: trackingCode,
+        tracking_url: trackingUrl,
         data: result.data,
       }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
