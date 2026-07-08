@@ -19,6 +19,44 @@ interface BulkOrderRequest {
   orders: SteadfastOrderRequest[];
 }
 
+// Try to extract the real tracking link that the courier API returns.
+// Falls back to null when the response carries no link (the UI then builds a
+// sensible default from the tracking code).
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function extractTrackingUrl(data: any): string | null {
+  if (!data) return null;
+  const seen = new Set<unknown>();
+  const urlRegex = /https?:\/\/[^\s"'<>]+/i;
+  // Prefer explicit link-ish fields first.
+  const preferredKeys = [
+    'tracking_url', 'tracking_link', 'trackingUrl', 'trackingLink',
+    'track_url', 'track_link', 'public_tracking_url', 'share_url', 'url', 'link',
+  ];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const walk = (node: any): string | null => {
+    if (node == null || typeof node !== 'object' || seen.has(node)) return null;
+    seen.add(node);
+    for (const key of preferredKeys) {
+      const v = node[key];
+      if (typeof v === 'string' && urlRegex.test(v)) return v.match(urlRegex)![0];
+    }
+    // Any string value that looks like a steadfast tracking link.
+    for (const v of Object.values(node)) {
+      if (typeof v === 'string' && /steadfast\.com\.bd\/t\//i.test(v)) {
+        return v.match(urlRegex)![0];
+      }
+    }
+    for (const v of Object.values(node)) {
+      if (v && typeof v === 'object') {
+        const found = walk(v);
+        if (found) return found;
+      }
+    }
+    return null;
+  };
+  return walk(data);
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function getCredentials(supabase: any) {
   // First try to get from admin_settings table
