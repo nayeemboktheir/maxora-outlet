@@ -642,10 +642,10 @@ export default function AdminOrders() {
         setTrackingNumber(data.tracking_code);
         // Update local state with tracking info
         setOrders(prev => prev.map(o => 
-          o.id === order.id ? { ...o, tracking_number: data.tracking_code, steadfast_consignment_id: data.consignment_id } : o
+          o.id === order.id ? { ...o, tracking_number: data.tracking_code, tracking_url: data.tracking_url ?? o.tracking_url, steadfast_consignment_id: data.consignment_id } : o
         ));
         if (selectedOrder?.id === order.id) {
-          setSelectedOrder(prev => prev ? { ...prev, tracking_number: data.tracking_code } : prev);
+          setSelectedOrder(prev => prev ? { ...prev, tracking_number: data.tracking_code, tracking_url: data.tracking_url ?? prev.tracking_url } : prev);
         }
       }
     } catch (error) {
