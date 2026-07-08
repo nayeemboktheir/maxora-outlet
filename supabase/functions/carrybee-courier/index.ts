@@ -20,6 +20,35 @@ interface BulkOrderRequest {
   orders: CarrybeeOrderRequest[];
 }
 
+// Prefer a tracking link returned by the Carrybee API; otherwise build the
+// standard merchant tracking link from the tracking/consignment code.
+function buildCarrybeeTrackingUrl(data: any, trackingCode: string): string | null {
+  const urlRegex = /https?:\/\/[^\s"'<>]+/i;
+  const seen = new Set<unknown>();
+  const preferredKeys = ['tracking_url', 'tracking_link', 'trackingUrl', 'trackingLink', 'track_url', 'share_url', 'url', 'link'];
+  const walk = (node: any): string | null => {
+    if (node == null || typeof node !== 'object' || seen.has(node)) return null;
+    seen.add(node);
+    for (const key of preferredKeys) {
+      const v = node[key];
+      if (typeof v === 'string' && urlRegex.test(v)) return v.match(urlRegex)![0];
+    }
+    for (const v of Object.values(node)) {
+      if (typeof v === 'string' && /carrybee\.com\/order-track\//i.test(v)) return v.match(urlRegex)![0];
+    }
+    for (const v of Object.values(node)) {
+      if (v && typeof v === 'object') {
+        const found = walk(v);
+        if (found) return found;
+      }
+    }
+    return null;
+  };
+  const fromApi = walk(data);
+  if (fromApi) return fromApi;
+  return trackingCode ? `https://merchant.carrybee.com/order-track/${trackingCode}` : null;
+}
+
 async function getCredentials(supabase: any) {
   const { data: settings } = await supabase
     .from('admin_settings')
