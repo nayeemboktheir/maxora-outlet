@@ -89,6 +89,7 @@ interface Order {
   shipping_district: string;
   shipping_postal_code: string | null;
   tracking_number: string | null;
+  tracking_url?: string | null;
   notes: string | null;
   invoice_note: string | null;
   steadfast_note: string | null;
@@ -126,7 +127,7 @@ const FAST_FALLBACK_LIMIT = 200;
 const FAST_ORDER_SELECT = `
   id, order_number, status, payment_status, payment_method, total, subtotal, shipping_cost, discount,
   shipping_name, shipping_phone, shipping_street, shipping_city, shipping_district, shipping_postal_code,
-  tracking_number, notes, invoice_note, steadfast_note, steadfast_consignment_id, created_at, order_source, is_printed,
+  tracking_number, tracking_url, notes, invoice_note, steadfast_note, steadfast_consignment_id, created_at, order_source, is_printed,
   order_items (id, order_id, product_id, product_name, product_image, quantity, price, variation_name)
 `;
 
@@ -641,10 +642,10 @@ export default function AdminOrders() {
         setTrackingNumber(data.tracking_code);
         // Update local state with tracking info
         setOrders(prev => prev.map(o => 
-          o.id === order.id ? { ...o, tracking_number: data.tracking_code, steadfast_consignment_id: data.consignment_id } : o
+          o.id === order.id ? { ...o, tracking_number: data.tracking_code, tracking_url: data.tracking_url ?? o.tracking_url, steadfast_consignment_id: data.consignment_id } : o
         ));
         if (selectedOrder?.id === order.id) {
-          setSelectedOrder(prev => prev ? { ...prev, tracking_number: data.tracking_code } : prev);
+          setSelectedOrder(prev => prev ? { ...prev, tracking_number: data.tracking_code, tracking_url: data.tracking_url ?? prev.tracking_url } : prev);
         }
       }
     } catch (error) {
@@ -727,7 +728,7 @@ export default function AdminOrders() {
           data.results.forEach((r: any) => {
             if (r.success && r.tracking_code) {
               const idx = updated.findIndex(o => o.id === r.orderId);
-              if (idx !== -1) updated[idx] = { ...updated[idx], tracking_number: r.tracking_code };
+              if (idx !== -1) updated[idx] = { ...updated[idx], tracking_number: r.tracking_code, tracking_url: r.tracking_url ?? updated[idx].tracking_url };
             }
           });
           return updated;
@@ -774,10 +775,10 @@ export default function AdminOrders() {
       if (data?.tracking_code) {
         setTrackingNumber(data.tracking_code);
         setOrders(prev => prev.map(o =>
-          o.id === order.id ? { ...o, tracking_number: data.tracking_code } : o
+          o.id === order.id ? { ...o, tracking_number: data.tracking_code, tracking_url: data.tracking_url ?? o.tracking_url } : o
         ));
         if (selectedOrder?.id === order.id) {
-          setSelectedOrder(prev => prev ? { ...prev, tracking_number: data.tracking_code } : prev);
+          setSelectedOrder(prev => prev ? { ...prev, tracking_number: data.tracking_code, tracking_url: data.tracking_url ?? prev.tracking_url } : prev);
         }
       }
     } catch (error) {
@@ -837,7 +838,7 @@ export default function AdminOrders() {
           data.results.forEach((r: any) => {
             if (r.success && r.tracking_code) {
               const idx = updated.findIndex(o => o.id === r.orderId);
-              if (idx !== -1) updated[idx] = { ...updated[idx], tracking_number: r.tracking_code };
+              if (idx !== -1) updated[idx] = { ...updated[idx], tracking_number: r.tracking_code, tracking_url: r.tracking_url ?? updated[idx].tracking_url };
             }
           });
           return updated;
@@ -1427,8 +1428,14 @@ export default function AdminOrders() {
                     {order.tracking_number ? (() => {
                       const tn = order.tracking_number!;
                       const isCarrybee = /^F\d{4}[A-Z0-9]+$/i.test(tn);
+                      const apiTrackingUrl = order.tracking_url || '';
                       const courierColor = isCarrybee ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200' : '';
                       const handleTrack = async () => {
+                        // Prefer the exact link captured from the courier API.
+                        if (apiTrackingUrl) {
+                          window.open(apiTrackingUrl, '_blank', 'noopener,noreferrer');
+                          return;
+                        }
                         if (isCarrybee) {
                           window.open(`https://merchant.carrybee.com/order-track/${tn}`, '_blank', 'noopener,noreferrer');
                           return;

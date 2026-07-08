@@ -19,6 +19,44 @@ interface BulkOrderRequest {
   orders: SteadfastOrderRequest[];
 }
 
+// Try to extract the real tracking link that the courier API returns.
+// Falls back to null when the response carries no link (the UI then builds a
+// sensible default from the tracking code).
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function extractTrackingUrl(data: any): string | null {
+  if (!data) return null;
+  const seen = new Set<unknown>();
+  const urlRegex = /https?:\/\/[^\s"'<>]+/i;
+  // Prefer explicit link-ish fields first.
+  const preferredKeys = [
+    'tracking_url', 'tracking_link', 'trackingUrl', 'trackingLink',
+    'track_url', 'track_link', 'public_tracking_url', 'share_url', 'url', 'link',
+  ];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const walk = (node: any): string | null => {
+    if (node == null || typeof node !== 'object' || seen.has(node)) return null;
+    seen.add(node);
+    for (const key of preferredKeys) {
+      const v = node[key];
+      if (typeof v === 'string' && urlRegex.test(v)) return v.match(urlRegex)![0];
+    }
+    // Any string value that looks like a steadfast tracking link.
+    for (const v of Object.values(node)) {
+      if (typeof v === 'string' && /steadfast\.com\.bd\/t\//i.test(v)) {
+        return v.match(urlRegex)![0];
+      }
+    }
+    for (const v of Object.values(node)) {
+      if (v && typeof v === 'object') {
+        const found = walk(v);
+        if (found) return found;
+      }
+    }
+    return null;
+  };
+  return walk(data);
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function getCredentials(supabase: any) {
   // First try to get from admin_settings table
@@ -69,6 +107,7 @@ async function sendToSteadfast(
     });
 
     const data = await response.json();
+    console.log('Steadfast create_order response:', JSON.stringify(data));
     
     if (!response.ok || data.status !== 200) {
       return { 
@@ -118,7 +157,7 @@ Deno.serve(async (req) => {
     if (body.orders && Array.isArray(body.orders)) {
       console.log(`Processing bulk order: ${body.orders.length} orders`);
       
-      const results: { orderId: string; success: boolean; tracking_code?: string; consignment_id?: string; error?: string }[] = [];
+      const results: { orderId: string; success: boolean; tracking_code?: string; consignment_id?: string; tracking_url?: string | null; error?: string }[] = [];
       
       for (const order of body.orders as SteadfastOrderRequest[]) {
         const result = await sendToSteadfast(order, apiKey, secretKey);
@@ -127,6 +166,7 @@ Deno.serve(async (req) => {
           const consignmentData = result.data as { consignment?: { consignment_id?: string; tracking_code?: string } };
           const consignmentId = consignmentData.consignment?.consignment_id;
           const trackingCode = consignmentData.consignment?.tracking_code || consignmentId;
+          const trackingUrl = extractTrackingUrl(result.data);
           
           // Update order with tracking and consignment ID
           if (order.orderId) {
@@ -135,12 +175,13 @@ Deno.serve(async (req) => {
               .update({ 
                 tracking_number: trackingCode, 
                 steadfast_consignment_id: consignmentId,
+                tracking_url: trackingUrl,
                 status: 'processing' 
               })
               .eq('id', order.orderId);
           }
           
-          results.push({ orderId: order.orderId, success: true, tracking_code: trackingCode, consignment_id: consignmentId });
+          results.push({ orderId: order.orderId, success: true, tracking_code: trackingCode, consignment_id: consignmentId, tracking_url: trackingUrl });
         } else {
           results.push({ orderId: order.orderId, success: false, error: result.error });
         }
@@ -183,6 +224,7 @@ Deno.serve(async (req) => {
     const consignmentData = result.data as { consignment?: { consignment_id?: string; tracking_code?: string } };
     const consignmentId = consignmentData.consignment?.consignment_id;
     const trackingCode = consignmentData.consignment?.tracking_code;
+    const trackingUrl = extractTrackingUrl(result.data);
 
     if ((consignmentId || trackingCode) && order.orderId) {
       await supabase
@@ -190,6 +232,7 @@ Deno.serve(async (req) => {
         .update({ 
           tracking_number: trackingCode || consignmentId, 
           steadfast_consignment_id: consignmentId,
+          tracking_url: trackingUrl,
           status: 'processing' 
         })
         .eq('id', order.orderId);
@@ -201,6 +244,7 @@ Deno.serve(async (req) => {
         message: 'Order sent to Steadfast successfully',
         consignment_id: consignmentId,
         tracking_code: trackingCode,
+        tracking_url: trackingUrl,
         data: result.data
       }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
