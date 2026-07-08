@@ -728,7 +728,7 @@ export default function AdminOrders() {
           data.results.forEach((r: any) => {
             if (r.success && r.tracking_code) {
               const idx = updated.findIndex(o => o.id === r.orderId);
-              if (idx !== -1) updated[idx] = { ...updated[idx], tracking_number: r.tracking_code };
+              if (idx !== -1) updated[idx] = { ...updated[idx], tracking_number: r.tracking_code, tracking_url: r.tracking_url ?? updated[idx].tracking_url };
             }
           });
           return updated;
@@ -838,7 +838,7 @@ export default function AdminOrders() {
           data.results.forEach((r: any) => {
             if (r.success && r.tracking_code) {
               const idx = updated.findIndex(o => o.id === r.orderId);
-              if (idx !== -1) updated[idx] = { ...updated[idx], tracking_number: r.tracking_code };
+              if (idx !== -1) updated[idx] = { ...updated[idx], tracking_number: r.tracking_code, tracking_url: r.tracking_url ?? updated[idx].tracking_url };
             }
           });
           return updated;
