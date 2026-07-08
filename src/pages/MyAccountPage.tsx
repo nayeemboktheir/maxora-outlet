@@ -47,6 +47,7 @@ interface Order {
   shipping_district: string;
   shipping_city: string;
   tracking_number: string | null;
+  tracking_url?: string | null;
   created_at: string;
   order_items: OrderItem[];
 }
@@ -287,7 +288,12 @@ const OrderCard = ({ order }: { order: Order }) => {
                   <span className="font-mono bg-background px-2 py-1 rounded">{order.tracking_number}</span>
                 </div>
                 <a
-                  href={`https://steadfast.com.bd/t/${order.tracking_number}`}
+                  href={
+                    order.tracking_url ||
+                    (/^F\d{4}[A-Z0-9]+$/i.test(order.tracking_number || '')
+                      ? `https://merchant.carrybee.com/order-track/${order.tracking_number}`
+                      : 'https://steadfast.com.bd/tracking')
+                  }
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-primary hover:underline flex items-center gap-1"
