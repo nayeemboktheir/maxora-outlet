@@ -1428,8 +1428,14 @@ export default function AdminOrders() {
                     {order.tracking_number ? (() => {
                       const tn = order.tracking_number!;
                       const isCarrybee = /^F\d{4}[A-Z0-9]+$/i.test(tn);
+                      const apiTrackingUrl = order.tracking_url || '';
                       const courierColor = isCarrybee ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200' : '';
                       const handleTrack = async () => {
+                        // Prefer the exact link captured from the courier API.
+                        if (apiTrackingUrl) {
+                          window.open(apiTrackingUrl, '_blank', 'noopener,noreferrer');
+                          return;
+                        }
                         if (isCarrybee) {
                           window.open(`https://merchant.carrybee.com/order-track/${tn}`, '_blank', 'noopener,noreferrer');
                           return;
