@@ -157,7 +157,7 @@ Deno.serve(async (req) => {
     if (body.orders && Array.isArray(body.orders)) {
       console.log(`Processing bulk order: ${body.orders.length} orders`);
       
-      const results: { orderId: string; success: boolean; tracking_code?: string; consignment_id?: string; error?: string }[] = [];
+      const results: { orderId: string; success: boolean; tracking_code?: string; consignment_id?: string; tracking_url?: string | null; error?: string }[] = [];
       
       for (const order of body.orders as SteadfastOrderRequest[]) {
         const result = await sendToSteadfast(order, apiKey, secretKey);
