@@ -89,6 +89,7 @@ interface Order {
   shipping_district: string;
   shipping_postal_code: string | null;
   tracking_number: string | null;
+  tracking_url?: string | null;
   notes: string | null;
   invoice_note: string | null;
   steadfast_note: string | null;
