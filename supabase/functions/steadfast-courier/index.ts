@@ -224,6 +224,7 @@ Deno.serve(async (req) => {
     const consignmentData = result.data as { consignment?: { consignment_id?: string; tracking_code?: string } };
     const consignmentId = consignmentData.consignment?.consignment_id;
     const trackingCode = consignmentData.consignment?.tracking_code;
+    const trackingUrl = extractTrackingUrl(result.data);
 
     if ((consignmentId || trackingCode) && order.orderId) {
       await supabase
@@ -231,6 +232,7 @@ Deno.serve(async (req) => {
         .update({ 
           tracking_number: trackingCode || consignmentId, 
           steadfast_consignment_id: consignmentId,
+          tracking_url: trackingUrl,
           status: 'processing' 
         })
         .eq('id', order.orderId);
@@ -242,6 +244,7 @@ Deno.serve(async (req) => {
         message: 'Order sent to Steadfast successfully',
         consignment_id: consignmentId,
         tracking_code: trackingCode,
+        tracking_url: trackingUrl,
         data: result.data
       }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
