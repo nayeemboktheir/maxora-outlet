@@ -107,6 +107,7 @@ async function sendToSteadfast(
     });
 
     const data = await response.json();
+    console.log('Steadfast create_order response:', JSON.stringify(data));
     
     if (!response.ok || data.status !== 200) {
       return { 
