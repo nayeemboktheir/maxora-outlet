@@ -775,10 +775,10 @@ export default function AdminOrders() {
       if (data?.tracking_code) {
         setTrackingNumber(data.tracking_code);
         setOrders(prev => prev.map(o =>
-          o.id === order.id ? { ...o, tracking_number: data.tracking_code } : o
+          o.id === order.id ? { ...o, tracking_number: data.tracking_code, tracking_url: data.tracking_url ?? o.tracking_url } : o
         ));
         if (selectedOrder?.id === order.id) {
-          setSelectedOrder(prev => prev ? { ...prev, tracking_number: data.tracking_code } : prev);
+          setSelectedOrder(prev => prev ? { ...prev, tracking_number: data.tracking_code, tracking_url: data.tracking_url ?? prev.tracking_url } : prev);
         }
       }
     } catch (error) {
