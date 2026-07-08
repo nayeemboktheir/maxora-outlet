@@ -265,7 +265,7 @@ Deno.serve(async (req) => {
     if (body.orders && Array.isArray(body.orders)) {
       console.log(`Processing bulk Carrybee order: ${body.orders.length} orders`);
 
-      const results: { orderId: string; success: boolean; tracking_code?: string; error?: string }[] = [];
+      const results: { orderId: string; success: boolean; tracking_code?: string; tracking_url?: string | null; error?: string }[] = [];
 
       for (const order of body.orders as CarrybeeOrderRequest[]) {
         const result = await sendToCarrybee(order, baseUrl, clientId, clientSecret, clientContext, storeId);
@@ -281,17 +281,20 @@ Deno.serve(async (req) => {
             (typeof result.data.id === 'string' && result.data.id) ||
             '';
 
+          const trackingUrl = buildCarrybeeTrackingUrl(result.data, trackingCode as string);
+
           if (trackingCode && order.orderId) {
             await supabase
               .from('orders')
               .update({
                 tracking_number: trackingCode,
+                tracking_url: trackingUrl,
                 status: 'processing',
               })
               .eq('id', order.orderId);
           }
 
-          results.push({ orderId: order.orderId, success: true, tracking_code: trackingCode || undefined });
+          results.push({ orderId: order.orderId, success: true, tracking_code: trackingCode || undefined, tracking_url: trackingUrl });
         } else {
           results.push({ orderId: order.orderId, success: false, error: result.error });
         }
