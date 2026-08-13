@@ -106,9 +106,20 @@ async function sendToSteadfast(
       }),
     });
 
-    const data = await response.json();
-    console.log('Steadfast create_order response:', JSON.stringify(data));
-    
+    const raw = await response.text();
+    console.log('Steadfast create_order response:', response.status, raw);
+
+    let data: any;
+    try {
+      data = JSON.parse(raw);
+    } catch {
+      // Steadfast returns plain text for account/auth problems e.g. "Account is not active!"
+      return {
+        success: false,
+        error: `Steadfast: ${raw?.trim() || `HTTP ${response.status}`}`,
+      };
+    }
+
     if (!response.ok || data.status !== 200) {
       return { 
         success: false, 
