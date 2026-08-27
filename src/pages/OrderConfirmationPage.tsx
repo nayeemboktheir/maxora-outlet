@@ -174,6 +174,8 @@ const OrderConfirmationPage = () => {
     );
 
     hasSentPixelPurchaseRef.current = true;
+    markFired('pixel', orderNumber);
+
   }, [orderNumber, total, items, numItems, pixelReady]);
 
 
