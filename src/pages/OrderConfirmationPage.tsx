@@ -26,9 +26,28 @@ interface OrderDetails {
   landingPageSlug?: string;
 }
 
-// Generate a unique event ID for deduplication between Pixel and CAPI
-const generateEventId = () => {
-  return `purchase_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
+// Deterministic event ID per order so Pixel + CAPI dedupe, and a page reload
+// or re-visit of the confirmation page never counts as a second Purchase.
+const buildEventId = (orderNumber: string) => `purchase_${orderNumber}`;
+
+// Persisted guard so reloading /order-confirmation does not re-fire Purchase
+const firedKey = (channel: 'pixel' | 'capi', orderNumber: string) =>
+  `mx_purchase_${channel}_${orderNumber}`;
+
+const alreadyFired = (channel: 'pixel' | 'capi', orderNumber: string) => {
+  try {
+    return localStorage.getItem(firedKey(channel, orderNumber)) === '1';
+  } catch {
+    return false;
+  }
+};
+
+const markFired = (channel: 'pixel' | 'capi', orderNumber: string) => {
+  try {
+    localStorage.setItem(firedKey(channel, orderNumber), '1');
+  } catch {
+    // ignore storage failures
+  }
 };
 
 const OrderConfirmationPage = () => {
@@ -42,6 +61,7 @@ const OrderConfirmationPage = () => {
 
   const { isReady: pixelReady, setUserData } = useFacebookPixel();
   const { trackPurchase: trackServerPurchase } = useServerTracking();
+
 
   
   const orderNumber = state?.orderNumber || '';
@@ -59,9 +79,8 @@ const OrderConfirmationPage = () => {
   useEffect(() => {
     if (!orderNumber || !total || total <= 0) return;
 
-    if (!purchaseEventIdRef.current) {
-      purchaseEventIdRef.current = generateEventId();
-    }
+    purchaseEventIdRef.current = buildEventId(orderNumber);
+
 
     // Update user data for better matching (safe to call multiple times)
     const nameParts = (customerName || '').trim().split(' ');
@@ -77,14 +96,17 @@ const OrderConfirmationPage = () => {
     }
   }, [orderNumber, total, customerName, phone, setUserData]);
 
-  // 2) Send SERVER Purchase exactly once (this is the one that matters most)
+  // 2) Send SERVER Purchase exactly once per order (survives reloads)
   useEffect(() => {
     if (!orderNumber || !total || total <= 0) return;
     if (hasSentServerPurchaseRef.current) return;
+    if (alreadyFired('capi', orderNumber)) return;
 
     hasSentServerPurchaseRef.current = true;
+    markFired('capi', orderNumber);
 
-    const eventId = purchaseEventIdRef.current || generateEventId();
+    const eventId = buildEventId(orderNumber);
+
     purchaseEventIdRef.current = eventId;
 
     const contentIds = items.map((item) => item.productId);
@@ -122,14 +144,19 @@ const OrderConfirmationPage = () => {
     });
   }, [orderNumber, total, items, numItems, customerName, phone, city, district, trackServerPurchase]);
 
-  // 3) Send BROWSER Purchase as soon as Pixel is ready (no missing/slow init)
+  // 3) Send BROWSER Purchase once per order, as soon as Pixel is ready
   useEffect(() => {
     if (!orderNumber || !total || total <= 0) return;
     if (hasSentPixelPurchaseRef.current) return;
     if (!pixelReady || !window.fbq) return;
+    if (alreadyFired('pixel', orderNumber)) {
+      hasSentPixelPurchaseRef.current = true;
+      return;
+    }
 
-    const eventId = purchaseEventIdRef.current || generateEventId();
+    const eventId = buildEventId(orderNumber);
     purchaseEventIdRef.current = eventId;
+
 
     const contentIds = items.map((item) => item.productId);
 
@@ -147,6 +174,8 @@ const OrderConfirmationPage = () => {
     );
 
     hasSentPixelPurchaseRef.current = true;
+    markFired('pixel', orderNumber);
+
   }, [orderNumber, total, items, numItems, pixelReady]);
 
 
