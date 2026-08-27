@@ -144,14 +144,19 @@ const OrderConfirmationPage = () => {
     });
   }, [orderNumber, total, items, numItems, customerName, phone, city, district, trackServerPurchase]);
 
-  // 3) Send BROWSER Purchase as soon as Pixel is ready (no missing/slow init)
+  // 3) Send BROWSER Purchase once per order, as soon as Pixel is ready
   useEffect(() => {
     if (!orderNumber || !total || total <= 0) return;
     if (hasSentPixelPurchaseRef.current) return;
     if (!pixelReady || !window.fbq) return;
+    if (alreadyFired('pixel', orderNumber)) {
+      hasSentPixelPurchaseRef.current = true;
+      return;
+    }
 
-    const eventId = purchaseEventIdRef.current || generateEventId();
+    const eventId = buildEventId(orderNumber);
     purchaseEventIdRef.current = eventId;
+
 
     const contentIds = items.map((item) => item.productId);
 
