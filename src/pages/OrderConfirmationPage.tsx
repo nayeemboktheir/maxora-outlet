@@ -79,9 +79,8 @@ const OrderConfirmationPage = () => {
   useEffect(() => {
     if (!orderNumber || !total || total <= 0) return;
 
-    if (!purchaseEventIdRef.current) {
-      purchaseEventIdRef.current = generateEventId();
-    }
+    purchaseEventIdRef.current = buildEventId(orderNumber);
+
 
     // Update user data for better matching (safe to call multiple times)
     const nameParts = (customerName || '').trim().split(' ');
