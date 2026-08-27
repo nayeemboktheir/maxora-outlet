@@ -156,7 +156,7 @@ export default function AdminOrders() {
   const [visibleRows, setVisibleRows] = useState(ORDERS_PAGE_SIZE);
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebouncedValue(search, 200);
-  const [statusFilter, setStatusFilter] = useState<string>('pending');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
   const [sourceFilter, setSourceFilter] = useState<string>('all');
   const [steadfastFilter, setSteadfastFilter] = useState<string>('all');
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
