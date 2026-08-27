@@ -96,14 +96,17 @@ const OrderConfirmationPage = () => {
     }
   }, [orderNumber, total, customerName, phone, setUserData]);
 
-  // 2) Send SERVER Purchase exactly once (this is the one that matters most)
+  // 2) Send SERVER Purchase exactly once per order (survives reloads)
   useEffect(() => {
     if (!orderNumber || !total || total <= 0) return;
     if (hasSentServerPurchaseRef.current) return;
+    if (alreadyFired('capi', orderNumber)) return;
 
     hasSentServerPurchaseRef.current = true;
+    markFired('capi', orderNumber);
 
-    const eventId = purchaseEventIdRef.current || generateEventId();
+    const eventId = buildEventId(orderNumber);
+
     purchaseEventIdRef.current = eventId;
 
     const contentIds = items.map((item) => item.productId);
