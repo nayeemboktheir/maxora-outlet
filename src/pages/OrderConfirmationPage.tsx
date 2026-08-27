@@ -26,9 +26,28 @@ interface OrderDetails {
   landingPageSlug?: string;
 }
 
-// Generate a unique event ID for deduplication between Pixel and CAPI
-const generateEventId = () => {
-  return `purchase_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
+// Deterministic event ID per order so Pixel + CAPI dedupe, and a page reload
+// or re-visit of the confirmation page never counts as a second Purchase.
+const buildEventId = (orderNumber: string) => `purchase_${orderNumber}`;
+
+// Persisted guard so reloading /order-confirmation does not re-fire Purchase
+const firedKey = (channel: 'pixel' | 'capi', orderNumber: string) =>
+  `mx_purchase_${channel}_${orderNumber}`;
+
+const alreadyFired = (channel: 'pixel' | 'capi', orderNumber: string) => {
+  try {
+    return localStorage.getItem(firedKey(channel, orderNumber)) === '1';
+  } catch {
+    return false;
+  }
+};
+
+const markFired = (channel: 'pixel' | 'capi', orderNumber: string) => {
+  try {
+    localStorage.setItem(firedKey(channel, orderNumber), '1');
+  } catch {
+    // ignore storage failures
+  }
 };
 
 const OrderConfirmationPage = () => {
@@ -42,6 +61,7 @@ const OrderConfirmationPage = () => {
 
   const { isReady: pixelReady, setUserData } = useFacebookPixel();
   const { trackPurchase: trackServerPurchase } = useServerTracking();
+
 
   
   const orderNumber = state?.orderNumber || '';
