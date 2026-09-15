@@ -123,6 +123,7 @@ export const createProduct = async (product: {
   stock: number;
   images?: string[];
   tags?: string[];
+  colors?: string[];
   is_featured?: boolean;
   is_new?: boolean;
   is_active?: boolean;
@@ -150,6 +151,7 @@ export const updateProduct = async (id: string, updates: Partial<{
   images: string[];
   video_url: string | null;
   tags: string[];
+  colors: string[];
   is_featured: boolean;
   is_new: boolean;
   is_active: boolean;
