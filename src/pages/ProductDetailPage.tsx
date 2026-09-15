@@ -37,6 +37,7 @@ const ProductDetailPage = () => {
   const [relatedProducts, setRelatedProducts] = useState<Product[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedVariation, setSelectedVariation] = useState<ProductVariation | undefined>(undefined);
+  const [selectedColor, setSelectedColor] = useState<string | undefined>(undefined);
   
   const dispatch = useAppDispatch();
   const wishlistItems = useAppSelector(selectWishlistItems);
@@ -158,14 +159,19 @@ const ProductDetailPage = () => {
   const displayOriginalPrice = selectedVariation?.original_price ?? product.originalPrice;
   const discountAmount = displayOriginalPrice ? displayOriginalPrice - displayPrice : 0;
   const currentStock = selectedVariation?.stock ?? product.stock;
+  const hasColors = (product.colors?.length ?? 0) > 0;
 
   const handleAddToCart = () => {
     if (hasVariations && !selectedVariation) {
       toast.error('সাইজ সিলেক্ট করুন');
       return;
     }
+    if (hasColors && !selectedColor) {
+      toast.error('কালার সিলেক্ট করুন');
+      return;
+    }
     
-    dispatch(addToCart({ product, quantity, variation: selectedVariation }));
+    dispatch(addToCart({ product, quantity, variation: selectedVariation, color: selectedColor }));
     dispatch(openCart());
     // Track AddToCart event - both browser pixel and server CAPI
     const eventId = generateEventId('AddToCart');
@@ -197,8 +203,12 @@ const ProductDetailPage = () => {
       toast.error('সাইজ সিলেক্ট করুন');
       return;
     }
+    if (hasColors && !selectedColor) {
+      toast.error('কালার সিলেক্ট করুন');
+      return;
+    }
     
-    dispatch(addToCart({ product, quantity, variation: selectedVariation }));
+    dispatch(addToCart({ product, quantity, variation: selectedVariation, color: selectedColor }));
     
     // Track AddToCart event - both browser pixel and server CAPI
     const eventId = generateEventId('AddToCart');
@@ -373,6 +383,30 @@ const ProductDetailPage = () => {
                       }`}
                     >
                       {variation.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Color Selector */}
+            {hasColors && (
+              <div className="space-y-3">
+                <p className="text-sm text-muted-foreground">
+                  কালার নির্বাচন করুন: <span className="font-semibold text-foreground">{selectedColor || ''}</span>
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {product.colors!.map((color) => (
+                    <button
+                      key={color}
+                      onClick={() => setSelectedColor(color)}
+                      className={`min-w-[60px] px-4 py-2.5 rounded-full text-sm font-medium border transition-all ${
+                        selectedColor === color
+                          ? 'border-foreground bg-foreground text-background'
+                          : 'border-border bg-background text-foreground hover:border-foreground'
+                      }`}
+                    >
+                      {color}
                     </button>
                   ))}
                 </div>

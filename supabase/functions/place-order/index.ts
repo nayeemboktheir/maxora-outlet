@@ -14,6 +14,7 @@ type PlaceOrderBody = {
   items: Array<{
     productId: string;
     variationId?: string;
+    color?: string | null;
     quantity: number;
     productName?: string;
     productImage?: string | null;
@@ -349,6 +350,7 @@ Deno.serve(async (req) => {
       .map((i) => ({
         productId: String(i.productId || '').trim(),
         variationId: typeof i.variationId === 'string' ? i.variationId.trim() : undefined,
+        color: typeof i.color === 'string' && i.color.trim() ? i.color.trim().slice(0, 50) : null,
         quantity: Number(i.quantity || 0),
         productName: typeof i.productName === 'string' ? i.productName.trim() : undefined,
         productImage: typeof i.productImage === 'string' ? i.productImage.trim() : null,
@@ -435,7 +437,8 @@ Deno.serve(async (req) => {
         productId: p.id,
         variationId: v?.id ?? null,
         variationName: v?.name ?? null,
-        name: v ? `${p.name} (${v.name})` : p.name,
+        color: i.color ?? null,
+        name: `${p.name}${v ? ` (${v.name})` : ''}${i.color ? ` [${i.color}]` : ''}`,
         image: p.images?.[0] ?? null,
         price: itemPrice,
         quantity: i.quantity,
@@ -462,6 +465,7 @@ Deno.serve(async (req) => {
         productId: null as string | null,
         variationId: null as string | null,
         variationName: null as string | null,
+        color: null as string | null,
         name: itemName,
         image,
         price,
@@ -481,6 +485,7 @@ Deno.serve(async (req) => {
         productId: string | null;
         variationId: string | null;
         variationName: string | null;
+        color: string | null;
         name: string;
         image: string | null;
         price: number;
@@ -490,6 +495,7 @@ Deno.serve(async (req) => {
         productId: string | null;
         variationId: string | null;
         variationName: string | null;
+        color: string | null;
         name: string;
         image: string | null;
         price: number;
@@ -561,6 +567,7 @@ Deno.serve(async (req) => {
         variation_id: i.variationId,
         product_name: i.name,
         variation_name: i.variationName,
+        color: i.color,
         product_image: i.image,
         price: i.price,
         quantity: i.quantity,

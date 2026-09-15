@@ -52,6 +52,7 @@ interface ProductData {
   short_description?: string;
   long_description?: string;
   variations: ProductVariation[];
+  colors?: string[];
 }
 
 interface OrderForm {
@@ -60,6 +61,7 @@ interface OrderForm {
   address: string;
   quantity: number;
   selectedVariationId: string;
+  selectedColor?: string;
   shippingZone?: ShippingZone;
   subtotal?: number;
   shippingCost?: number;
@@ -461,11 +463,16 @@ const CheckoutSection = memo(({ product, onSubmit, isSubmitting }: {
   product: ProductData; onSubmit: (form: OrderForm) => void; isSubmitting: boolean;
 }) => {
   const [form, setForm] = useState<OrderForm>({
-    name: "", phone: "", address: "", quantity: 1, selectedVariationId: "",
+    name: "", phone: "", address: "", quantity: 1, selectedVariationId: "", selectedColor: "",
   });
   const [shippingZone, setShippingZone] = useState<ShippingZone>('outside_dhaka');
   const formRef = useRef<HTMLFormElement>(null);
   const sizeSelectionRef = useRef<HTMLDivElement>(null);
+  const colorSelectionRef = useRef<HTMLDivElement>(null);
+  const colors = useMemo(
+    () => (product.colors || []).filter((c) => typeof c === 'string' && c.trim()),
+    [product.colors]
+  );
 
   const variations = useMemo(() => {
     const seen = new Set<string>();
@@ -495,6 +502,11 @@ const CheckoutSection = memo(({ product, onSubmit, isSubmitting }: {
     if (variations.length > 0 && !form.selectedVariationId) {
       toast.error("সাইজ সিলেক্ট করুন");
       sizeSelectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
+    }
+    if (colors.length > 0 && !form.selectedColor) {
+      toast.error("কালার সিলেক্ট করুন");
+      colorSelectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
       return;
     }
     if (!form.name.trim() || !form.phone.trim() || !form.address.trim()) {
@@ -540,6 +552,32 @@ const CheckoutSection = memo(({ product, onSubmit, isSubmitting }: {
                     <p className="text-xl font-bold text-primary">৳{unitPrice.toLocaleString()}</p>
                   </div>
                 </div>
+
+                {/* Color Selection */}
+                {colors.length > 0 && (
+                  <div ref={colorSelectionRef} className="mb-4">
+                    <p className="text-sm font-medium text-foreground mb-2">কালার নির্বাচন করুন <span className="text-destructive">*</span></p>
+                    <div className="flex flex-wrap gap-2">
+                      {colors.map((c) => (
+                        <button
+                          key={c}
+                          type="button"
+                          onClick={() => updateForm('selectedColor', c)}
+                          className={`px-4 py-2.5 rounded-lg font-semibold transition-all border-2 ${
+                            form.selectedColor === c
+                              ? 'border-primary bg-primary text-primary-foreground shadow-md'
+                              : 'border-border bg-secondary/50 text-foreground hover:border-primary/50'
+                          }`}
+                        >
+                          {c}
+                        </button>
+                      ))}
+                    </div>
+                    {!form.selectedColor && (
+                      <p className="text-xs text-destructive mt-1">* কালার সিলেক্ট করুন</p>
+                    )}
+                  </div>
+                )}
 
                 {/* Size Selection */}
                 {variations.length > 0 && (
@@ -775,7 +813,7 @@ const ProductLandingPage = () => {
       const { data, error } = await supabase.functions.invoke('place-order', {
         body: {
           userId: null,
-          items: [{ productId: product.id, variationId: form.selectedVariationId || null, quantity: form.quantity }],
+          items: [{ productId: product.id, variationId: form.selectedVariationId || null, color: form.selectedColor || null, quantity: form.quantity }],
           shipping: { name: form.name, phone: form.phone, address: form.address },
           shippingZone: form.shippingZone,
           orderSource: 'landing_page',

@@ -28,6 +28,8 @@ const ProductCard = ({ product, index = 0 }: ProductCardProps) => {
   // State for selected variation - no auto-select, customer must choose manually
   const hasVariations = product.variations && product.variations.length > 0;
   const [selectedVariation, setSelectedVariation] = useState<ProductVariation | undefined>(undefined);
+  const hasColors = (product.colors?.length ?? 0) > 0;
+  const [selectedColor, setSelectedColor] = useState<string | undefined>(undefined);
 
   // Get display price based on variation or base price
   const displayPrice = selectedVariation?.price ?? product.price;
@@ -46,8 +48,13 @@ const ProductCard = ({ product, index = 0 }: ProductCardProps) => {
       toast.error('সাইজ সিলেক্ট করুন');
       return;
     }
+
+    if (hasColors && !selectedColor) {
+      toast.error('কালার সিলেক্ট করুন');
+      return;
+    }
     
-    dispatch(addToCart({ product, variation: selectedVariation }));
+    dispatch(addToCart({ product, variation: selectedVariation, color: selectedColor }));
     dispatch(openCart());
     
     // Track AddToCart event - both browser pixel and server CAPI
@@ -84,9 +91,14 @@ const ProductCard = ({ product, index = 0 }: ProductCardProps) => {
       toast.error('সাইজ সিলেক্ট করুন');
       return;
     }
+
+    if (hasColors && !selectedColor) {
+      toast.error('কালার সিলেক্ট করুন');
+      return;
+    }
     
     // Add to cart and navigate to checkout
-    dispatch(addToCart({ product, variation: selectedVariation }));
+    dispatch(addToCart({ product, variation: selectedVariation, color: selectedColor }));
     
     // Track AddToCart event - both browser pixel and server CAPI
     const eventId = generateEventId('AddToCart');
@@ -179,7 +191,7 @@ const ProductCard = ({ product, index = 0 }: ProductCardProps) => {
             </div>
 
             {/* Add to Cart / Buy Now Buttons - Only show on hover if no variations */}
-            {!hasVariations && (
+            {!hasVariations && !hasColors && (
               <div className="absolute bottom-0 left-0 right-0 p-2 translate-y-full group-hover:translate-y-0 transition-transform duration-300">
                 <div className="flex flex-col gap-1.5">
                   <Button 
@@ -268,6 +280,33 @@ const ProductCard = ({ product, index = 0 }: ProductCardProps) => {
               </div>
             )}
 
+            {/* Color Selector */}
+            {hasColors && (
+              <div className="mb-3">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="text-xs font-medium text-muted-foreground shrink-0">Color:</span>
+                  {product.colors!.map((color) => (
+                    <button
+                      key={color}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setSelectedColor(color);
+                      }}
+                      className={`h-7 px-2 text-xs font-semibold rounded border transition-all ${
+                        selectedColor === color
+                          ? 'border-primary bg-primary text-primary-foreground'
+                          : 'border-border bg-background text-foreground hover:border-primary'
+                      }`}
+                      title={color}
+                    >
+                      {color}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* Price */}
             <div className="flex items-center gap-2">
               <span className="text-lg font-bold text-primary">
@@ -281,7 +320,7 @@ const ProductCard = ({ product, index = 0 }: ProductCardProps) => {
             </div>
 
             {/* Add to Cart / Buy Now Buttons for products with variations */}
-            {hasVariations && (
+            {(hasVariations || hasColors) && (
               <div className="flex gap-2 mt-3 relative z-10">
                 <button 
                   type="button"
