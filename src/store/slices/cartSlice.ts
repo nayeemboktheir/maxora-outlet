@@ -21,8 +21,8 @@ const saveCartToStorage = (items: CartItem[]) => {
 };
 
 // Generate a unique key for cart items based on product id and variation id
-const getCartItemKey = (productId: string, variationId?: string): string => {
-  return variationId ? `${productId}-${variationId}` : productId;
+const getCartItemKey = (productId: string, variationId?: string, color?: string): string => {
+  return `${productId}|${variationId || ''}|${color || ''}`;
 };
 
 const initialState: CartState = {
@@ -36,40 +36,40 @@ const cartSlice = createSlice({
   reducers: {
     addToCart: (
       state,
-      action: PayloadAction<{ product: Product; quantity?: number; variation?: ProductVariation }>
+      action: PayloadAction<{ product: Product; quantity?: number; variation?: ProductVariation; color?: string }>
     ) => {
-      const { product, quantity = 1, variation } = action.payload;
-      const itemKey = getCartItemKey(product.id, variation?.id);
+      const { product, quantity = 1, variation, color } = action.payload;
+      const itemKey = getCartItemKey(product.id, variation?.id, color);
 
       const existingItem = state.items.find(
-        (item) => getCartItemKey(item.product.id, item.variation?.id) === itemKey
+        (item) => getCartItemKey(item.product.id, item.variation?.id, item.color) === itemKey
       );
 
       if (existingItem) {
         existingItem.quantity += quantity;
       } else {
-        state.items.push({ product, quantity, variation });
+        state.items.push({ product, quantity, variation, color });
       }
       saveCartToStorage(state.items);
     },
-    removeFromCart: (state, action: PayloadAction<{ productId: string; variationId?: string }>) => {
-      const { productId, variationId } = action.payload;
-      const itemKey = getCartItemKey(productId, variationId);
+    removeFromCart: (state, action: PayloadAction<{ productId: string; variationId?: string; color?: string }>) => {
+      const { productId, variationId, color } = action.payload;
+      const itemKey = getCartItemKey(productId, variationId, color);
 
       state.items = state.items.filter(
-        (item) => getCartItemKey(item.product.id, item.variation?.id) !== itemKey
+        (item) => getCartItemKey(item.product.id, item.variation?.id, item.color) !== itemKey
       );
       saveCartToStorage(state.items);
     },
     updateQuantity: (
       state,
-      action: PayloadAction<{ productId: string; variationId?: string; quantity: number }>
+      action: PayloadAction<{ productId: string; variationId?: string; color?: string; quantity: number }>
     ) => {
-      const { productId, variationId, quantity } = action.payload;
-      const itemKey = getCartItemKey(productId, variationId);
+      const { productId, variationId, color, quantity } = action.payload;
+      const itemKey = getCartItemKey(productId, variationId, color);
 
       const item = state.items.find(
-        (item) => getCartItemKey(item.product.id, item.variation?.id) === itemKey
+        (item) => getCartItemKey(item.product.id, item.variation?.id, item.color) === itemKey
       );
       if (item) {
         item.quantity = Math.max(1, quantity);
@@ -78,25 +78,25 @@ const cartSlice = createSlice({
     },
     setCartItemVariation: (
       state,
-      action: PayloadAction<{ productId: string; fromVariationId?: string; variation?: ProductVariation }>
+      action: PayloadAction<{ productId: string; fromVariationId?: string; color?: string; variation?: ProductVariation }>
     ) => {
-      const { productId, fromVariationId, variation } = action.payload;
+      const { productId, fromVariationId, color, variation } = action.payload;
 
-      const fromKey = getCartItemKey(productId, fromVariationId);
+      const fromKey = getCartItemKey(productId, fromVariationId, color);
       const existing = state.items.find(
-        (item) => getCartItemKey(item.product.id, item.variation?.id) === fromKey
+        (item) => getCartItemKey(item.product.id, item.variation?.id, item.color) === fromKey
       );
       if (!existing) return;
 
       // Remove the old item
       state.items = state.items.filter(
-        (item) => getCartItemKey(item.product.id, item.variation?.id) !== fromKey
+        (item) => getCartItemKey(item.product.id, item.variation?.id, item.color) !== fromKey
       );
 
       // Add/merge into the target item key
-      const toKey = getCartItemKey(productId, variation?.id);
+      const toKey = getCartItemKey(productId, variation?.id, color);
       const target = state.items.find(
-        (item) => getCartItemKey(item.product.id, item.variation?.id) === toKey
+        (item) => getCartItemKey(item.product.id, item.variation?.id, item.color) === toKey
       );
 
       if (target) {
@@ -105,6 +105,19 @@ const cartSlice = createSlice({
         state.items.push({ ...existing, variation });
       }
 
+      saveCartToStorage(state.items);
+    },
+    setCartItemColor: (
+      state,
+      action: PayloadAction<{ productId: string; variationId?: string; fromColor?: string; color?: string }>
+    ) => {
+      const { productId, variationId, fromColor, color } = action.payload;
+      const fromKey = getCartItemKey(productId, variationId, fromColor);
+      const existing = state.items.find(
+        (item) => getCartItemKey(item.product.id, item.variation?.id, item.color) === fromKey
+      );
+      if (!existing) return;
+      existing.color = color;
       saveCartToStorage(state.items);
     },
     clearCart: (state) => {
@@ -128,6 +141,7 @@ export const {
   removeFromCart,
   updateQuantity,
   setCartItemVariation,
+  setCartItemColor,
   clearCart,
   toggleCart,
   openCart,

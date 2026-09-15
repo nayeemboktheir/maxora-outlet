@@ -116,6 +116,7 @@ const CartPage = () => {
                             onClick={() => dispatch(updateQuantity({ 
                               productId: item.product.id,
                               variationId: item.variation?.id,
+                              color: item.color,
                               quantity: item.quantity - 1 
                             }))}
                             className="p-2 hover:bg-muted transition-colors"
@@ -130,6 +131,7 @@ const CartPage = () => {
                             onClick={() => dispatch(updateQuantity({ 
                               productId: item.product.id,
                               variationId: item.variation?.id,
+                              color: item.color,
                               quantity: item.quantity + 1 
                             }))}
                             className="p-2 hover:bg-muted transition-colors"

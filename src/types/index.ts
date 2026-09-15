@@ -30,6 +30,7 @@ export interface Product {
   discount?: number;
   tags?: string[];
   variations?: ProductVariation[];
+  colors?: string[];
 }
 
 export interface Category {
@@ -51,6 +52,7 @@ export interface CartItem {
   product: Product;
   quantity: number;
   variation?: ProductVariation;
+  color?: string;
 }
 
 export interface User {

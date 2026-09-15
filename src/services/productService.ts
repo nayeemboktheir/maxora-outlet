@@ -178,5 +178,6 @@ const mapProductFromDB = (data: any): Product => {
     discount: discount,
     tags: data.tags || [],
     variations: variations.length > 0 ? variations : undefined,
+    colors: Array.isArray(data.colors) ? data.colors.filter((c: any) => typeof c === 'string' && c.trim()) : [],
   };
 };
