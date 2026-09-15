@@ -14,6 +14,7 @@ type PlaceOrderBody = {
   items: Array<{
     productId: string;
     variationId?: string;
+    color?: string | null;
     quantity: number;
     productName?: string;
     productImage?: string | null;
@@ -349,6 +350,7 @@ Deno.serve(async (req) => {
       .map((i) => ({
         productId: String(i.productId || '').trim(),
         variationId: typeof i.variationId === 'string' ? i.variationId.trim() : undefined,
+        color: typeof i.color === 'string' && i.color.trim() ? i.color.trim().slice(0, 50) : null,
         quantity: Number(i.quantity || 0),
         productName: typeof i.productName === 'string' ? i.productName.trim() : undefined,
         productImage: typeof i.productImage === 'string' ? i.productImage.trim() : null,
