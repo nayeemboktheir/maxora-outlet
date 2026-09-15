@@ -485,6 +485,7 @@ Deno.serve(async (req) => {
         productId: string | null;
         variationId: string | null;
         variationName: string | null;
+        color: string | null;
         name: string;
         image: string | null;
         price: number;
@@ -494,6 +495,7 @@ Deno.serve(async (req) => {
         productId: string | null;
         variationId: string | null;
         variationName: string | null;
+        color: string | null;
         name: string;
         image: string | null;
         price: number;
@@ -565,6 +567,7 @@ Deno.serve(async (req) => {
         variation_id: i.variationId,
         product_name: i.name,
         variation_name: i.variationName,
+        color: i.color,
         product_image: i.image,
         price: i.price,
         quantity: i.quantity,
