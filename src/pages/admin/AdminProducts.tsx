@@ -75,6 +75,7 @@ interface Product {
   images: string[] | null;
   video_url: string | null;
   tags: string[] | null;
+  colors?: string[] | null;
   is_featured: boolean | null;
   is_new: boolean | null;
   is_active: boolean | null;
@@ -100,6 +101,7 @@ const initialFormState = {
   images: '',
   video_url: '',
   tags: '',
+  colors: '',
   is_featured: false,
   is_new: false,
   is_active: true,
@@ -237,6 +239,7 @@ export default function AdminProducts() {
       images: '',
       video_url: product.video_url || '',
       tags: product.tags?.join(', ') || '',
+      colors: product.colors?.join(', ') || '',
       is_featured: product.is_featured || false,
       is_new: product.is_new || false,
       is_active: product.is_active ?? true,
@@ -457,6 +460,7 @@ export default function AdminProducts() {
         images: productImages.length > 0 ? productImages : [],
         video_url: formData.video_url || null,
         tags: formData.tags ? formData.tags.split(',').map(s => s.trim()) : [],
+        colors: formData.colors ? formData.colors.split(',').map(s => s.trim()).filter(Boolean) : [],
         is_featured: formData.is_featured,
         is_new: formData.is_new,
         is_active: formData.is_active,
@@ -522,6 +526,7 @@ export default function AdminProducts() {
         images: product.images || [],
         video_url: product.video_url || undefined,
         tags: product.tags || [],
+        colors: product.colors || [],
         is_featured: product.is_featured || false,
         is_new: product.is_new || false,
         is_active: false, // Set as inactive by default
@@ -803,6 +808,19 @@ export default function AdminProducts() {
                     <p className="text-sm text-muted-foreground">ভিডিও যুক্ত হয়েছে - ল্যান্ডিং পেজে স্বয়ংক্রিয়ভাবে সঠিক সাইজে দেখা যাবে</p>
                   </div>
                 )}
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="colors">Colors (কমা দিয়ে আলাদা করুন)</Label>
+                <Input
+                  id="colors"
+                  value={formData.colors}
+                  onChange={(e) => setFormData({ ...formData, colors: e.target.value })}
+                  placeholder="Red, Blue, Black"
+                />
+                <p className="text-xs text-muted-foreground">
+                  কালার দিলে কাস্টমারকে অর্ডারের আগে কালার সিলেক্ট করতে হবে
+                </p>
               </div>
 
               <div className="space-y-2">
