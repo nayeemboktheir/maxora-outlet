@@ -356,6 +356,20 @@ const CheckoutPage = () => {
       return variations.length > 0 && !item.variation;
     });
 
+    const missingColor = cartItems.find((item) => {
+      const colors = item.product.colors || [];
+      return colors.length > 0 && !item.color;
+    });
+
+    if (missingColor) {
+      toast({
+        title: "কালার নির্বাচন করুন",
+        description: `${missingColor.product.name} - এর কালার সিলেক্ট করুন`,
+        variant: "destructive",
+      });
+      return false;
+    }
+
     if (missingSize) {
       toast({
         title: "সাইজ নির্বাচন করুন",
@@ -609,6 +623,7 @@ const CheckoutPage = () => {
                                     setCartItemVariation({
                                       productId: item.product.id,
                                       fromVariationId: item.variation?.id,
+                                      color: item.color,
                                       variation: v,
                                     })
                                   );
@@ -622,6 +637,33 @@ const CheckoutPage = () => {
                                     <SelectItem key={v.id} value={v.id}>
                                       {v.name} — ৳{Number(v.price).toLocaleString('en-BD')}
                                     </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                          )}
+
+                          {(item.product.colors || []).length > 0 && (
+                            <div className="mt-2">
+                              <Select
+                                value={item.color}
+                                onValueChange={(color) => {
+                                  dispatch(
+                                    setCartItemColor({
+                                      productId: item.product.id,
+                                      variationId: item.variation?.id,
+                                      fromColor: item.color,
+                                      color,
+                                    })
+                                  );
+                                }}
+                              >
+                                <SelectTrigger className="h-8 text-xs">
+                                  <SelectValue placeholder="কালার নির্বাচন করুন" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {(item.product.colors || []).map((c) => (
+                                    <SelectItem key={c} value={c}>{c}</SelectItem>
                                   ))}
                                 </SelectContent>
                               </Select>

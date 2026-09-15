@@ -24,6 +24,7 @@ export const createOrder = async (orderData: CreateOrderData): Promise<Order> =>
         items: orderData.items.map((i) => ({
           productId: i.product.id,
           variationId: i.variation?.id,
+          color: i.color ?? null,
           quantity: i.quantity,
           // Provide extra fields so orders can still be placed when the catalog uses non-UUID mock ids
           productName: i.product.name,
