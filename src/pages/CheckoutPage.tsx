@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAppSelector, useAppDispatch } from '@/store/hooks';
-import { selectCartItems, selectCartTotal, clearCart, setCartItemVariation } from '@/store/slices/cartSlice';
+import { selectCartItems, selectCartTotal, clearCart, setCartItemVariation, setCartItemColor } from '@/store/slices/cartSlice';
 import { useAuth } from '@/hooks/useAuth';
 import { createOrder } from '@/services/orderService';
 import { supabase } from '@/integrations/supabase/client';
