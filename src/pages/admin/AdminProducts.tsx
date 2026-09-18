@@ -577,6 +577,7 @@ export default function AdminProducts() {
             stock: v.stock,
             sort_order: idx + 1,
             is_active: v.is_active,
+            image_url: v.image_url || null,
           }))
         );
       }
