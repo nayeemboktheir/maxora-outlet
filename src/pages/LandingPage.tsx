@@ -177,10 +177,23 @@ const SectionRenderer = ({ section, theme, slug }: SectionRendererProps) => {
               .eq("is_active", true)
               .order("sort_order");
 
+            // Fallback: product without variations becomes a single selectable item
+            const finalVariations: ProductVariation[] =
+              variations && variations.length > 0
+                ? variations
+                : [{
+                    id: `base-${product.id}`,
+                    name: product.name,
+                    price: product.price,
+                    original_price: product.original_price,
+                    stock: 999,
+                    image_url: null,
+                  }];
+
             return {
               ...product,
               images: product.images || [],
-              variations: variations || [],
+              variations: finalVariations,
             };
           })
         );
@@ -278,7 +291,7 @@ const SectionRenderer = ({ section, theme, slug }: SectionRendererProps) => {
           userId: null,
           items: selectedList.map((i) => ({
             productId: i.product.id,
-            variationId: i.variation.id,
+            variationId: i.variation.id.startsWith("base-") ? undefined : i.variation.id,
             quantity: i.quantity,
           })),
           shipping: {
