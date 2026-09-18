@@ -128,6 +128,7 @@ interface ProductVariation {
   price: number;
   original_price?: number;
   stock: number;
+  image_url?: string | null;
 }
 
 interface ProductWithVariations {
@@ -147,9 +148,9 @@ const SectionRenderer = ({ section, theme, slug }: SectionRendererProps) => {
     name: "",
     phone: "",
     address: "",
-    quantity: 1,
-    selectedVariationId: "",
   });
+  // Multi-select: variationId -> quantity
+  const [selectedItems, setSelectedItems] = useState<Record<string, number>>({});
   const [shippingZone, setShippingZone] = useState<ShippingZone>('outside_dhaka');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [products, setProducts] = useState<ProductWithVariations[]>([]);
@@ -171,7 +172,7 @@ const SectionRenderer = ({ section, theme, slug }: SectionRendererProps) => {
           productsData.map(async (product) => {
             const { data: variations } = await supabase
               .from("product_variations")
-              .select("id, name, price, original_price, stock")
+              .select("id, name, price, original_price, stock, image_url")
               .eq("product_id", product.id)
               .eq("is_active", true)
               .order("sort_order");
@@ -184,10 +185,10 @@ const SectionRenderer = ({ section, theme, slug }: SectionRendererProps) => {
           })
         );
         setProducts(productsWithVariations);
-        
+
         // Auto-select first variation
         if (productsWithVariations.length > 0 && productsWithVariations[0].variations.length > 0) {
-          setOrderForm(prev => ({ ...prev, selectedVariationId: productsWithVariations[0].variations[0].id }));
+          setSelectedItems({ [productsWithVariations[0].variations[0].id]: 1 });
         }
       }
     };
