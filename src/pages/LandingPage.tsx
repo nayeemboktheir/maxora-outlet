@@ -218,15 +218,38 @@ const SectionRenderer = ({ section, theme, slug }: SectionRendererProps) => {
     return () => clearInterval(timer);
   }, [section]);
 
-  // Get selected variation details
-  const getSelectedVariation = () => {
+  // Get all selected items (multi-select)
+  const getSelectedItems = () => {
+    const result: Array<{ product: ProductWithVariations; variation: ProductVariation; quantity: number }> = [];
     for (const product of products) {
-      const variation = product.variations.find(v => v.id === orderForm.selectedVariationId);
-      if (variation) {
-        return { product, variation };
+      for (const variation of product.variations) {
+        const qty = selectedItems[variation.id];
+        if (qty && qty > 0) {
+          result.push({ product, variation, quantity: qty });
+        }
       }
     }
-    return null;
+    return result;
+  };
+
+  const toggleItem = (variationId: string) => {
+    setSelectedItems((prev) => {
+      const next = { ...prev };
+      if (next[variationId]) {
+        delete next[variationId];
+      } else {
+        next[variationId] = 1;
+      }
+      return next;
+    });
+  };
+
+  const changeItemQty = (variationId: string, delta: number) => {
+    setSelectedItems((prev) => {
+      const current = prev[variationId] || 0;
+      const nextQty = Math.max(1, current + delta);
+      return { ...prev, [variationId]: nextQty };
+    });
   };
 
   const handleOrderSubmit = async (e: React.FormEvent, settings: Record<string, unknown>) => {
@@ -236,16 +259,16 @@ const SectionRenderer = ({ section, theme, slug }: SectionRendererProps) => {
       return;
     }
 
-    const selected = getSelectedVariation();
-    if (!selected) {
-      toast.error("প্রোডাক্ট সিলেক্ট করুন");
+    const selectedList = getSelectedItems();
+    if (selectedList.length === 0) {
+      toast.error("অন্তত একটি প্রোডাক্ট সিলেক্ট করুন");
       return;
     }
 
-    const { product, variation } = selected;
-    const subtotal = variation.price * orderForm.quantity;
-    const shippingCost = SHIPPING_RATES[shippingZone];
+    const subtotal = selectedList.reduce((sum, i) => sum + i.variation.price * i.quantity, 0);
+    const shippingCost = (settings as { freeDelivery?: boolean }).freeDelivery ? 0 : SHIPPING_RATES[shippingZone];
     const total = subtotal + shippingCost;
+    const numItems = selectedList.reduce((sum, i) => sum + i.quantity, 0);
 
     setIsSubmitting(true);
     try {
@@ -253,13 +276,11 @@ const SectionRenderer = ({ section, theme, slug }: SectionRendererProps) => {
       const { data, error } = await supabase.functions.invoke('place-order', {
         body: {
           userId: null,
-          items: [
-            {
-              productId: product.id,
-              variationId: variation.id,
-              quantity: orderForm.quantity,
-            },
-          ],
+          items: selectedList.map((i) => ({
+            productId: i.product.id,
+            variationId: i.variation.id,
+            quantity: i.quantity,
+          })),
           shipping: {
             name: orderForm.name,
             phone: orderForm.phone,
@@ -282,13 +303,13 @@ const SectionRenderer = ({ section, theme, slug }: SectionRendererProps) => {
           customerName: orderForm.name,
           phone: orderForm.phone,
           total: total,
-          items: [{
-            productId: product.id,
-            productName: product.name,
-            price: variation.price,
-            quantity: orderForm.quantity,
-          }],
-          numItems: orderForm.quantity,
+          items: selectedList.map((i) => ({
+            productId: i.product.id,
+            productName: `${i.product.name} - ${i.variation.name}`,
+            price: i.variation.price,
+            quantity: i.quantity,
+          })),
+          numItems,
           fromLandingPage: true,
           landingPageSlug: slug,
         }
