@@ -910,23 +910,56 @@ export default function AdminProducts() {
                 {hasVariations && (
                   <div className="space-y-3 bg-muted/50 rounded-lg p-4">
                     <div className="grid grid-cols-12 gap-2 text-xs font-medium text-muted-foreground mb-2">
-                      <div className="col-span-3">সাইজ (Size)</div>
-                      <div className="col-span-3">দাম (Price) ৳</div>
-                      <div className="col-span-3">আগের দাম</div>
+                      <div className="col-span-2">ছবি (Image)</div>
+                      <div className="col-span-3">সাইজ / ভ্যারিয়েশন</div>
+                      <div className="col-span-2">দাম (Price) ৳</div>
+                      <div className="col-span-2">আগের দাম</div>
                       <div className="col-span-2">স্টক</div>
                       <div className="col-span-1"></div>
                     </div>
                     
                     {variations.map((variation) => (
                       <div key={variation.clientId} className="grid grid-cols-12 gap-2 items-center">
+                        <div className="col-span-2 flex items-center gap-2">
+                          <label className="relative cursor-pointer">
+                            <div className="w-12 h-12 rounded border bg-background overflow-hidden flex items-center justify-center">
+                              {variation.image_url ? (
+                                <img src={variation.image_url} alt="" className="w-full h-full object-cover" />
+                              ) : (
+                                <Plus className="h-4 w-4 text-muted-foreground" />
+                              )}
+                            </div>
+                            <input
+                              type="file"
+                              accept="image/*"
+                              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                              onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                if (file) handleVariationImageUpload(variation.clientId, file);
+                                e.target.value = '';
+                              }}
+                            />
+                          </label>
+                          {variation.image_url && (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="h-6 w-6"
+                              onClick={() => handleVariationChange(variation.clientId, 'image_url', null)}
+                            >
+                              <Trash2 className="h-3 w-3 text-destructive" />
+                            </Button>
+                          )}
+                        </div>
                         <Input
                           className="col-span-3"
-                          placeholder="Size 36"
+                          placeholder="Size 36 / White"
                           value={variation.name}
                           onChange={(e) => handleVariationChange(variation.clientId, 'name', e.target.value)}
                         />
                         <Input
-                          className="col-span-3"
+                          className="col-span-2"
                           type="number"
                           placeholder="950"
                           value={variation.price || ''}
@@ -939,7 +972,7 @@ export default function AdminProducts() {
                           }
                         />
                         <Input
-                          className="col-span-3"
+                          className="col-span-2"
                           type="number"
                           placeholder="Optional"
                           value={variation.original_price || ''}
