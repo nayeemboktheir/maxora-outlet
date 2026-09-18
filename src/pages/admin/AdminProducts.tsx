@@ -59,6 +59,7 @@ interface ProductVariation {
   stock: number;
   sort_order: number;
   is_active: boolean;
+  image_url?: string | null;
 }
 
 interface Product {
@@ -188,6 +189,7 @@ export default function AdminProducts() {
           stock: v.stock,
           sort_order: v.sort_order || 0,
           is_active: v.is_active ?? true,
+          image_url: v.image_url || null,
         }))
       );
       setHasVariations(true);
@@ -398,6 +400,7 @@ export default function AdminProducts() {
         stock: v.stock,
         sort_order: idx + 1,
         is_active: v.is_active,
+        image_url: v.image_url || null,
       };
 
       if (existingId) {
