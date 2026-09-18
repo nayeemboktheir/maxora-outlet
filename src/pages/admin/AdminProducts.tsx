@@ -351,6 +351,28 @@ export default function AdminProducts() {
     );
   };
 
+  const handleVariationImageUpload = async (clientId: string, file: File) => {
+    if (!file.type.startsWith('image/')) {
+      toast.error('শুধু ছবি আপলোড করুন');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('ছবিটি বড় (সর্বোচ্চ 5MB)');
+      return;
+    }
+    const fileExt = file.name.split('.').pop();
+    const fileName = `variations/${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
+    const { error } = await supabase.storage.from('shop-assets').upload(fileName, file);
+    if (error) {
+      console.error('Variation image upload error:', error);
+      toast.error('ছবি আপলোড হয়নি');
+      return;
+    }
+    const { data: urlData } = supabase.storage.from('shop-assets').getPublicUrl(fileName);
+    handleVariationChange(clientId, 'image_url', urlData.publicUrl);
+    toast.success('ছবি আপলোড হয়েছে');
+  };
+
   const saveVariations = async (productId: string) => {
     if (!hasVariations || variations.length === 0) {
       // If no variations, just delete all existing ones
