@@ -128,6 +128,7 @@ interface ProductVariation {
   price: number;
   original_price?: number;
   stock: number;
+  image_url?: string | null;
 }
 
 interface ProductWithVariations {
@@ -147,9 +148,9 @@ const SectionRenderer = ({ section, theme, slug }: SectionRendererProps) => {
     name: "",
     phone: "",
     address: "",
-    quantity: 1,
-    selectedVariationId: "",
   });
+  // Multi-select: variationId -> quantity
+  const [selectedItems, setSelectedItems] = useState<Record<string, number>>({});
   const [shippingZone, setShippingZone] = useState<ShippingZone>('outside_dhaka');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [products, setProducts] = useState<ProductWithVariations[]>([]);
@@ -171,7 +172,7 @@ const SectionRenderer = ({ section, theme, slug }: SectionRendererProps) => {
           productsData.map(async (product) => {
             const { data: variations } = await supabase
               .from("product_variations")
-              .select("id, name, price, original_price, stock")
+              .select("id, name, price, original_price, stock, image_url")
               .eq("product_id", product.id)
               .eq("is_active", true)
               .order("sort_order");
@@ -184,10 +185,10 @@ const SectionRenderer = ({ section, theme, slug }: SectionRendererProps) => {
           })
         );
         setProducts(productsWithVariations);
-        
+
         // Auto-select first variation
         if (productsWithVariations.length > 0 && productsWithVariations[0].variations.length > 0) {
-          setOrderForm(prev => ({ ...prev, selectedVariationId: productsWithVariations[0].variations[0].id }));
+          setSelectedItems({ [productsWithVariations[0].variations[0].id]: 1 });
         }
       }
     };
@@ -217,15 +218,38 @@ const SectionRenderer = ({ section, theme, slug }: SectionRendererProps) => {
     return () => clearInterval(timer);
   }, [section]);
 
-  // Get selected variation details
-  const getSelectedVariation = () => {
+  // Get all selected items (multi-select)
+  const getSelectedItems = () => {
+    const result: Array<{ product: ProductWithVariations; variation: ProductVariation; quantity: number }> = [];
     for (const product of products) {
-      const variation = product.variations.find(v => v.id === orderForm.selectedVariationId);
-      if (variation) {
-        return { product, variation };
+      for (const variation of product.variations) {
+        const qty = selectedItems[variation.id];
+        if (qty && qty > 0) {
+          result.push({ product, variation, quantity: qty });
+        }
       }
     }
-    return null;
+    return result;
+  };
+
+  const toggleItem = (variationId: string) => {
+    setSelectedItems((prev) => {
+      const next = { ...prev };
+      if (next[variationId]) {
+        delete next[variationId];
+      } else {
+        next[variationId] = 1;
+      }
+      return next;
+    });
+  };
+
+  const changeItemQty = (variationId: string, delta: number) => {
+    setSelectedItems((prev) => {
+      const current = prev[variationId] || 0;
+      const nextQty = Math.max(1, current + delta);
+      return { ...prev, [variationId]: nextQty };
+    });
   };
 
   const handleOrderSubmit = async (e: React.FormEvent, settings: Record<string, unknown>) => {
@@ -235,16 +259,16 @@ const SectionRenderer = ({ section, theme, slug }: SectionRendererProps) => {
       return;
     }
 
-    const selected = getSelectedVariation();
-    if (!selected) {
-      toast.error("প্রোডাক্ট সিলেক্ট করুন");
+    const selectedList = getSelectedItems();
+    if (selectedList.length === 0) {
+      toast.error("অন্তত একটি প্রোডাক্ট সিলেক্ট করুন");
       return;
     }
 
-    const { product, variation } = selected;
-    const subtotal = variation.price * orderForm.quantity;
-    const shippingCost = SHIPPING_RATES[shippingZone];
+    const subtotal = selectedList.reduce((sum, i) => sum + i.variation.price * i.quantity, 0);
+    const shippingCost = (settings as { freeDelivery?: boolean }).freeDelivery ? 0 : SHIPPING_RATES[shippingZone];
     const total = subtotal + shippingCost;
+    const numItems = selectedList.reduce((sum, i) => sum + i.quantity, 0);
 
     setIsSubmitting(true);
     try {
@@ -252,13 +276,11 @@ const SectionRenderer = ({ section, theme, slug }: SectionRendererProps) => {
       const { data, error } = await supabase.functions.invoke('place-order', {
         body: {
           userId: null,
-          items: [
-            {
-              productId: product.id,
-              variationId: variation.id,
-              quantity: orderForm.quantity,
-            },
-          ],
+          items: selectedList.map((i) => ({
+            productId: i.product.id,
+            variationId: i.variation.id,
+            quantity: i.quantity,
+          })),
           shipping: {
             name: orderForm.name,
             phone: orderForm.phone,
@@ -281,13 +303,13 @@ const SectionRenderer = ({ section, theme, slug }: SectionRendererProps) => {
           customerName: orderForm.name,
           phone: orderForm.phone,
           total: total,
-          items: [{
-            productId: product.id,
-            productName: product.name,
-            price: variation.price,
-            quantity: orderForm.quantity,
-          }],
-          numItems: orderForm.quantity,
+          items: selectedList.map((i) => ({
+            productId: i.product.id,
+            productName: `${i.product.name} - ${i.variation.name}`,
+            price: i.variation.price,
+            quantity: i.quantity,
+          })),
+          numItems,
           fromLandingPage: true,
           landingPageSlug: slug,
         }
@@ -540,8 +562,8 @@ const SectionRenderer = ({ section, theme, slug }: SectionRendererProps) => {
         freeDelivery?: boolean;
       };
 
-      const selected = getSelectedVariation();
-      const subtotal = selected ? selected.variation.price * orderForm.quantity : 0;
+      const selectedList = getSelectedItems();
+      const subtotal = selectedList.reduce((sum, i) => sum + i.variation.price * i.quantity, 0);
       const shippingCost = settings.freeDelivery ? 0 : SHIPPING_RATES[shippingZone];
       const total = subtotal + shippingCost;
 
@@ -561,93 +583,74 @@ const SectionRenderer = ({ section, theme, slug }: SectionRendererProps) => {
               </div>
             )}
             
-            {/* Product Selection */}
+            {/* Product Selection - multi select */}
             {products.length > 0 && (
               <div className="mb-8">
-                <h3 className="text-lg font-semibold mb-4">প্রোডাক্ট সিলেক্ট করে বাকি তথ্য দিনঃ</h3>
-                <div className="bg-white rounded-xl border overflow-hidden">
-                  <div className="hidden md:grid grid-cols-[auto_1fr_auto_auto] gap-4 p-3 bg-gray-50 border-b text-sm font-medium text-gray-600">
-                    <span>Product</span>
-                    <span></span>
-                    <span>Quantity</span>
-                    <span>Price</span>
-                  </div>
-                  {products.map((product) => (
-                    <div key={product.id}>
-                      {product.variations.map((variation) => (
-                        <div 
-                          key={variation.id} 
-                          className={`flex flex-col md:grid md:grid-cols-[auto_1fr_auto_auto] gap-3 md:gap-4 p-4 items-start md:items-center cursor-pointer transition-colors ${
-                            orderForm.selectedVariationId === variation.id 
-                              ? 'bg-amber-50 border-l-4 border-amber-500' 
-                              : 'hover:bg-gray-50 border-l-4 border-transparent'
+                <h3 className="text-lg font-semibold mb-4">প্রোডাক্ট সিলেক্ট করুন 👇</h3>
+                <div className="grid sm:grid-cols-2 gap-3">
+                  {products.map((product) =>
+                    product.variations.map((variation) => {
+                      const isChecked = !!selectedItems[variation.id];
+                      const qty = selectedItems[variation.id] || 1;
+                      const img = variation.image_url || product.images?.[0];
+                      return (
+                        <div
+                          key={variation.id}
+                          onClick={() => toggleItem(variation.id)}
+                          className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
+                            isChecked ? 'bg-amber-50 border-amber-500' : 'bg-gray-50 border-gray-200 hover:bg-gray-100'
                           }`}
-                          onClick={() => setOrderForm(prev => ({ ...prev, selectedVariationId: variation.id }))}
                         >
-                          <div className="flex items-center gap-3 w-full md:w-auto md:contents">
-                            <div className="w-14 h-14 md:w-16 md:h-16 rounded-lg overflow-hidden bg-gray-100 flex-shrink-0">
-                              {product.images?.[0] && (
-                                <img 
-                                  src={product.images[0]} 
-                                  alt={product.name}
-                                  className="w-full h-full object-cover"
-                                />
-                              )}
-                            </div>
-                            <div className="flex-1">
-                              <p className="font-medium text-sm md:text-base">{product.name}</p>
-                              <p className="text-xs md:text-sm text-gray-500">Weight: {variation.name}</p>
-                            </div>
-                            <div className="text-right md:hidden">
-                              <p className="font-bold text-base" style={{ color: settings.accentColor || '#b8860b' }}>
-                                ৳ {variation.price.toLocaleString()}
-                              </p>
-                              {variation.original_price && variation.original_price > variation.price && (
-                                <p className="text-xs text-gray-400 line-through">
-                                  ৳ {variation.original_price.toLocaleString()}
-                                </p>
-                              )}
-                            </div>
-                          </div>
-                          {orderForm.selectedVariationId === variation.id && (
-                            <div className="flex items-center gap-2 w-full md:w-auto justify-center md:justify-start">
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setOrderForm(prev => ({ ...prev, quantity: Math.max(1, prev.quantity - 1) }));
-                                }}
-                                className="w-8 h-8 rounded-full border flex items-center justify-center hover:bg-gray-100"
-                              >
-                                −
-                              </button>
-                              <span className="w-8 text-center font-medium">{orderForm.quantity}</span>
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setOrderForm(prev => ({ ...prev, quantity: prev.quantity + 1 }));
-                                }}
-                                className="w-8 h-8 rounded-full border flex items-center justify-center hover:bg-gray-100"
-                              >
-                                +
-                              </button>
-                            </div>
-                          )}
-                          <div className="hidden md:block text-right">
-                            <p className="font-bold text-lg" style={{ color: settings.accentColor || '#b8860b' }}>
-                              ৳ {variation.price.toLocaleString()}
-                            </p>
-                            {variation.original_price && variation.original_price > variation.price && (
-                              <p className="text-sm text-gray-400 line-through">
-                                ৳ {variation.original_price.toLocaleString()}
-                              </p>
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={() => toggleItem(variation.id)}
+                            onClick={(e) => e.stopPropagation()}
+                            className="mt-1 h-4 w-4 flex-shrink-0 accent-amber-600"
+                          />
+                          <div className="w-14 h-16 rounded overflow-hidden bg-white flex-shrink-0">
+                            {img && (
+                              <img src={img} alt={variation.name} className="w-full h-full object-cover" />
                             )}
                           </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="font-semibold text-sm md:text-base truncate">
+                              {variation.name} <span className="text-gray-500 font-normal">× {qty}</span>
+                            </p>
+                            <div className="flex items-center gap-3 mt-2 flex-wrap">
+                              <div className="flex items-center border rounded bg-white">
+                                <button
+                                  type="button"
+                                  onClick={(e) => { e.stopPropagation(); changeItemQty(variation.id, -1); }}
+                                  className="w-7 h-7 flex items-center justify-center text-gray-600 hover:bg-gray-100"
+                                >
+                                  −
+                                </button>
+                                <span className="w-8 text-center text-sm font-medium">{qty}</span>
+                                <button
+                                  type="button"
+                                  onClick={(e) => { e.stopPropagation(); changeItemQty(variation.id, 1); }}
+                                  className="w-7 h-7 flex items-center justify-center text-gray-600 hover:bg-gray-100"
+                                >
+                                  +
+                                </button>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                {variation.original_price && variation.original_price > variation.price && (
+                                  <span className="text-xs text-gray-400 line-through">
+                                    {variation.original_price.toLocaleString()}৳
+                                  </span>
+                                )}
+                                <span className="font-bold text-sm" style={{ color: settings.accentColor || '#b8860b' }}>
+                                  {variation.price.toLocaleString()}৳
+                                </span>
+                              </div>
+                            </div>
+                          </div>
                         </div>
-                      ))}
-                    </div>
-                  ))}
+                      );
+                    })
+                  )}
                 </div>
               </div>
             )}
@@ -705,26 +708,28 @@ const SectionRenderer = ({ section, theme, slug }: SectionRendererProps) => {
               )}
 
               {/* Order Summary */}
-              {selected && (
+              {selectedList.length > 0 && (
                 <div className="bg-gray-50 rounded-xl p-4 mt-6">
                   <h3 className="font-semibold mb-4">Your order</h3>
                   <div className="space-y-3">
-                    <div className="flex justify-between items-center pb-3 border-b">
-                      <div className="flex items-center gap-3">
-                        {selected.product.images?.[0] && (
-                          <img 
-                            src={selected.product.images[0]} 
-                            alt="" 
-                            className="w-12 h-12 rounded object-cover"
-                          />
-                        )}
-                        <div>
-                          <p className="font-medium text-sm">{selected.product.name} - {selected.variation.name}</p>
-                          <p className="text-sm text-gray-500">× {orderForm.quantity}</p>
+                    {selectedList.map((item) => (
+                      <div key={item.variation.id} className="flex justify-between items-center pb-3 border-b">
+                        <div className="flex items-center gap-3">
+                          {(item.variation.image_url || item.product.images?.[0]) && (
+                            <img
+                              src={item.variation.image_url || item.product.images[0]}
+                              alt=""
+                              className="w-12 h-12 rounded object-cover"
+                            />
+                          )}
+                          <div>
+                            <p className="font-medium text-sm">{item.product.name} - {item.variation.name}</p>
+                            <p className="text-sm text-gray-500">× {item.quantity}</p>
+                          </div>
                         </div>
+                        <span className="font-medium">৳ {(item.variation.price * item.quantity).toLocaleString()}</span>
                       </div>
-                      <span className="font-medium">৳ {(selected.variation.price * orderForm.quantity).toLocaleString()}</span>
-                    </div>
+                    ))}
                     <div className="flex justify-between text-sm">
                       <span>Subtotal</span>
                       <span>৳ {subtotal.toLocaleString()}</span>
@@ -751,7 +756,7 @@ const SectionRenderer = ({ section, theme, slug }: SectionRendererProps) => {
                   color: "#fff",
                   borderRadius: theme.borderRadius,
                 }}
-                disabled={isSubmitting || !selected}
+                disabled={isSubmitting || selectedList.length === 0}
               >
                 {isSubmitting ? "Processing..." : `${settings.buttonText}  ৳ ${total.toLocaleString()}`}
               </Button>
