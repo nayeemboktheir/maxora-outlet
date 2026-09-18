@@ -562,8 +562,8 @@ const SectionRenderer = ({ section, theme, slug }: SectionRendererProps) => {
         freeDelivery?: boolean;
       };
 
-      const selected = getSelectedVariation();
-      const subtotal = selected ? selected.variation.price * orderForm.quantity : 0;
+      const selectedList = getSelectedItems();
+      const subtotal = selectedList.reduce((sum, i) => sum + i.variation.price * i.quantity, 0);
       const shippingCost = settings.freeDelivery ? 0 : SHIPPING_RATES[shippingZone];
       const total = subtotal + shippingCost;
 
@@ -727,26 +727,28 @@ const SectionRenderer = ({ section, theme, slug }: SectionRendererProps) => {
               )}
 
               {/* Order Summary */}
-              {selected && (
+              {selectedList.length > 0 && (
                 <div className="bg-gray-50 rounded-xl p-4 mt-6">
                   <h3 className="font-semibold mb-4">Your order</h3>
                   <div className="space-y-3">
-                    <div className="flex justify-between items-center pb-3 border-b">
-                      <div className="flex items-center gap-3">
-                        {selected.product.images?.[0] && (
-                          <img 
-                            src={selected.product.images[0]} 
-                            alt="" 
-                            className="w-12 h-12 rounded object-cover"
-                          />
-                        )}
-                        <div>
-                          <p className="font-medium text-sm">{selected.product.name} - {selected.variation.name}</p>
-                          <p className="text-sm text-gray-500">× {orderForm.quantity}</p>
+                    {selectedList.map((item) => (
+                      <div key={item.variation.id} className="flex justify-between items-center pb-3 border-b">
+                        <div className="flex items-center gap-3">
+                          {(item.variation.image_url || item.product.images?.[0]) && (
+                            <img
+                              src={item.variation.image_url || item.product.images[0]}
+                              alt=""
+                              className="w-12 h-12 rounded object-cover"
+                            />
+                          )}
+                          <div>
+                            <p className="font-medium text-sm">{item.product.name} - {item.variation.name}</p>
+                            <p className="text-sm text-gray-500">× {item.quantity}</p>
+                          </div>
                         </div>
+                        <span className="font-medium">৳ {(item.variation.price * item.quantity).toLocaleString()}</span>
                       </div>
-                      <span className="font-medium">৳ {(selected.variation.price * orderForm.quantity).toLocaleString()}</span>
-                    </div>
+                    ))}
                     <div className="flex justify-between text-sm">
                       <span>Subtotal</span>
                       <span>৳ {subtotal.toLocaleString()}</span>
@@ -773,7 +775,7 @@ const SectionRenderer = ({ section, theme, slug }: SectionRendererProps) => {
                   color: "#fff",
                   borderRadius: theme.borderRadius,
                 }}
-                disabled={isSubmitting || !selected}
+                disabled={isSubmitting || selectedList.length === 0}
               >
                 {isSubmitting ? "Processing..." : `${settings.buttonText}  ৳ ${total.toLocaleString()}`}
               </Button>
