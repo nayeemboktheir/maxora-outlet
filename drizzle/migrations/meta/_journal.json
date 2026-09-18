@@ -8,6 +8,13 @@
       "when": 1789494312386,
       "tag": "0000_add_product_colors",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1789719345971,
+      "tag": "0001_add_variation_image",
+      "breakpoints": true
     }
   ]
 }
