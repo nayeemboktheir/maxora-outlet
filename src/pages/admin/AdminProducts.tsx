@@ -474,7 +474,9 @@ export default function AdminProducts() {
         images: productImages.length > 0 ? productImages : [],
         video_url: formData.video_url || null,
         tags: formData.tags ? formData.tags.split(',').map(s => s.trim()) : [],
-        colors: formData.colors ? formData.colors.split(',').map(s => s.trim()).filter(Boolean) : [],
+        colors: hasVariations
+          ? []
+          : formData.colors.split(',').map((color) => color.trim()).filter(Boolean),
         is_featured: formData.is_featured,
         is_new: formData.is_new,
         is_active: formData.is_active,

@@ -244,6 +244,11 @@ const SectionRenderer = ({ section, theme, slug }: SectionRendererProps) => {
   };
 
   const toggleItem = (variationId: string) => {
+    const variation = products.flatMap((product) => product.variations).find((item) => item.id === variationId);
+    if (!variation || variation.stock <= 0) {
+      toast.error("এই অপশনটি স্টকে নেই");
+      return;
+    }
     setSelectedItems((prev) => {
       const next = { ...prev };
       if (next[variationId]) {
@@ -256,9 +261,11 @@ const SectionRenderer = ({ section, theme, slug }: SectionRendererProps) => {
   };
 
   const changeItemQty = (variationId: string, delta: number) => {
+    const variation = products.flatMap((product) => product.variations).find((item) => item.id === variationId);
+    if (!variation) return;
     setSelectedItems((prev) => {
       const current = prev[variationId] || 0;
-      const nextQty = Math.max(1, current + delta);
+      const nextQty = Math.min(variation.stock, Math.max(1, current + delta));
       return { ...prev, [variationId]: nextQty };
     });
   };
@@ -604,17 +611,19 @@ const SectionRenderer = ({ section, theme, slug }: SectionRendererProps) => {
                       const isChecked = !!selectedItems[variation.id];
                       const qty = selectedItems[variation.id] || 1;
                       const img = variation.image_url || product.images?.[0];
+                      const isOutOfStock = variation.stock <= 0;
                       return (
                         <div
                           key={variation.id}
                           onClick={() => toggleItem(variation.id)}
-                          className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
+                          className={`flex items-start gap-3 p-3 rounded-lg border transition-colors ${
                             isChecked ? 'bg-amber-50 border-amber-500' : 'bg-gray-50 border-gray-200 hover:bg-gray-100'
-                          }`}
+                          } ${isOutOfStock ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}`}
                         >
                           <input
                             type="checkbox"
                             checked={isChecked}
+                            disabled={isOutOfStock}
                             onChange={() => toggleItem(variation.id)}
                             onClick={(e) => e.stopPropagation()}
                             className="mt-1 h-4 w-4 flex-shrink-0 accent-amber-600"
@@ -628,10 +637,12 @@ const SectionRenderer = ({ section, theme, slug }: SectionRendererProps) => {
                             <p className="font-semibold text-sm md:text-base break-words">
                               {variation.name} <span className="text-gray-500 font-normal">× {qty}</span>
                             </p>
+                            {isOutOfStock && <p className="text-xs text-destructive mt-1">স্টক শেষ</p>}
                             <div className="flex items-center gap-3 mt-2 flex-wrap">
                               <div className="flex items-center border rounded bg-white">
                                 <button
                                   type="button"
+                                  disabled={!isChecked}
                                   onClick={(e) => { e.stopPropagation(); changeItemQty(variation.id, -1); }}
                                   className="w-7 h-7 flex items-center justify-center text-gray-600 hover:bg-gray-100"
                                 >
@@ -640,6 +651,7 @@ const SectionRenderer = ({ section, theme, slug }: SectionRendererProps) => {
                                 <span className="w-8 text-center text-sm font-medium">{qty}</span>
                                 <button
                                   type="button"
+                                  disabled={!isChecked || qty >= variation.stock}
                                   onClick={(e) => { e.stopPropagation(); changeItemQty(variation.id, 1); }}
                                   className="w-7 h-7 flex items-center justify-center text-gray-600 hover:bg-gray-100"
                                 >
