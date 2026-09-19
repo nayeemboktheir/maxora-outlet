@@ -199,10 +199,8 @@ const SectionRenderer = ({ section, theme, slug }: SectionRendererProps) => {
         );
         setProducts(productsWithVariations);
 
-        // Auto-select first variation
-        if (productsWithVariations.length > 0 && productsWithVariations[0].variations.length > 0) {
-          setSelectedItems({ [productsWithVariations[0].variations[0].id]: 1 });
-        }
+        // Start empty so the customer deliberately chooses one or more colors/options.
+        setSelectedItems({});
       }
     };
 
@@ -599,7 +597,7 @@ const SectionRenderer = ({ section, theme, slug }: SectionRendererProps) => {
             {/* Product Selection - multi select */}
             {products.length > 0 && (
               <div className="mb-8">
-                <h3 className="text-lg font-semibold mb-4">প্রোডাক্ট সিলেক্ট করুন 👇</h3>
+                <h3 className="text-lg font-semibold mb-4">কালার / প্রোডাক্ট সিলেক্ট করুন 👇</h3>
                 <div className="grid sm:grid-cols-2 gap-3">
                   {products.map((product) =>
                     product.variations.map((variation) => {
@@ -627,7 +625,7 @@ const SectionRenderer = ({ section, theme, slug }: SectionRendererProps) => {
                             )}
                           </div>
                           <div className="flex-1 min-w-0">
-                            <p className="font-semibold text-sm md:text-base truncate">
+                            <p className="font-semibold text-sm md:text-base break-words">
                               {variation.name} <span className="text-gray-500 font-normal">× {qty}</span>
                             </p>
                             <div className="flex items-center gap-3 mt-2 flex-wrap">
