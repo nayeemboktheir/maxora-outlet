@@ -108,12 +108,6 @@ const initialFormState = {
   is_active: true,
 };
 
-const defaultVariations: ProductVariation[] = [
-  { clientId: crypto.randomUUID(), name: 'Size 36', price: 0, stock: 100, sort_order: 1, is_active: true },
-  { clientId: crypto.randomUUID(), name: 'Size 38', price: 0, stock: 100, sort_order: 2, is_active: true },
-  { clientId: crypto.randomUUID(), name: 'Size 40', price: 0, stock: 100, sort_order: 3, is_active: true },
-];
-
 export default function AdminProducts() {
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -332,11 +326,6 @@ export default function AdminProducts() {
     ]);
   };
 
-  const handleAddDefaultVariations = () => {
-    setVariations(defaultVariations.map((v) => ({ ...v, clientId: crypto.randomUUID() })));
-    setHasVariations(true);
-  };
-
   const handleRemoveVariation = (clientId: string) => {
     setVariations((prev) => prev.filter((v) => v.clientId !== clientId));
   };
@@ -485,7 +474,9 @@ export default function AdminProducts() {
         images: productImages.length > 0 ? productImages : [],
         video_url: formData.video_url || null,
         tags: formData.tags ? formData.tags.split(',').map(s => s.trim()) : [],
-        colors: formData.colors ? formData.colors.split(',').map(s => s.trim()).filter(Boolean) : [],
+        colors: hasVariations
+          ? []
+          : formData.colors.split(',').map((color) => color.trim()).filter(Boolean),
         is_featured: formData.is_featured,
         is_new: formData.is_new,
         is_active: formData.is_active,
@@ -837,19 +828,6 @@ export default function AdminProducts() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="colors">Colors (কমা দিয়ে আলাদা করুন)</Label>
-                <Input
-                  id="colors"
-                  value={formData.colors}
-                  onChange={(e) => setFormData({ ...formData, colors: e.target.value })}
-                  placeholder="Red, Blue, Black"
-                />
-                <p className="text-xs text-muted-foreground">
-                  কালার দিলে কাস্টমারকে অর্ডারের আগে কালার সিলেক্ট করতে হবে
-                </p>
-              </div>
-
-              <div className="space-y-2">
                 <Label htmlFor="tags">Tags (comma-separated)</Label>
                 <Input
                   id="tags"
@@ -886,12 +864,15 @@ export default function AdminProducts() {
                 </div>
               </div>
 
-              {/* Size Variations Section */}
+              {/* Image-based color / product options */}
               <div className="border-t pt-4 mt-4">
                 <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center gap-2">
                     <Package className="h-5 w-5 text-primary" />
-                    <Label className="text-base font-semibold">সাইজ ভ্যারিয়েশন (Size Variations)</Label>
+                    <div>
+                      <Label className="text-base font-semibold">কালার / প্রোডাক্ট অপশন</Label>
+                      <p className="text-xs text-muted-foreground mt-1">প্রতিটি কালারের ছবি, নাম, দাম ও স্টক আলাদাভাবে দিন</p>
+                    </div>
                   </div>
                   <div className="flex items-center gap-2">
                     <Switch
@@ -900,11 +881,11 @@ export default function AdminProducts() {
                       onCheckedChange={(checked) => {
                         setHasVariations(checked);
                         if (checked && variations.length === 0) {
-                          handleAddDefaultVariations();
+                          handleAddVariation();
                         }
                       }}
                     />
-                    <Label htmlFor="hasVariations" className="text-sm">Enable</Label>
+                    <Label htmlFor="hasVariations" className="text-sm">চালু করুন</Label>
                   </div>
                 </div>
 
@@ -912,7 +893,7 @@ export default function AdminProducts() {
                   <div className="space-y-3 bg-muted/50 rounded-lg p-4">
                     <div className="grid grid-cols-12 gap-2 text-xs font-medium text-muted-foreground mb-2">
                       <div className="col-span-2">ছবি (Image)</div>
-                      <div className="col-span-3">সাইজ / ভ্যারিয়েশন</div>
+                      <div className="col-span-3">কালার / অপশনের নাম</div>
                       <div className="col-span-2">দাম (Price) ৳</div>
                       <div className="col-span-2">আগের দাম</div>
                       <div className="col-span-2">স্টক</div>
@@ -955,7 +936,7 @@ export default function AdminProducts() {
                         </div>
                         <Input
                           className="col-span-3"
-                          placeholder="Size 36 / White"
+                          placeholder="যেমন: Mst White"
                           value={variation.name}
                           onChange={(e) => handleVariationChange(variation.clientId, 'name', e.target.value)}
                         />
@@ -1017,7 +998,7 @@ export default function AdminProducts() {
                       className="mt-2"
                     >
                       <Plus className="h-4 w-4 mr-1" />
-                      আরো যোগ করুন
+                      আরেকটি কালার / অপশন যোগ করুন
                     </Button>
 
                   </div>

@@ -199,10 +199,8 @@ const SectionRenderer = ({ section, theme, slug }: SectionRendererProps) => {
         );
         setProducts(productsWithVariations);
 
-        // Auto-select first variation
-        if (productsWithVariations.length > 0 && productsWithVariations[0].variations.length > 0) {
-          setSelectedItems({ [productsWithVariations[0].variations[0].id]: 1 });
-        }
+        // Start empty so the customer deliberately chooses one or more colors/options.
+        setSelectedItems({});
       }
     };
 
@@ -246,6 +244,11 @@ const SectionRenderer = ({ section, theme, slug }: SectionRendererProps) => {
   };
 
   const toggleItem = (variationId: string) => {
+    const variation = products.flatMap((product) => product.variations).find((item) => item.id === variationId);
+    if (!variation || variation.stock <= 0) {
+      toast.error("এই অপশনটি স্টকে নেই");
+      return;
+    }
     setSelectedItems((prev) => {
       const next = { ...prev };
       if (next[variationId]) {
@@ -258,9 +261,11 @@ const SectionRenderer = ({ section, theme, slug }: SectionRendererProps) => {
   };
 
   const changeItemQty = (variationId: string, delta: number) => {
+    const variation = products.flatMap((product) => product.variations).find((item) => item.id === variationId);
+    if (!variation) return;
     setSelectedItems((prev) => {
       const current = prev[variationId] || 0;
-      const nextQty = Math.max(1, current + delta);
+      const nextQty = Math.min(variation.stock, Math.max(1, current + delta));
       return { ...prev, [variationId]: nextQty };
     });
   };
@@ -599,24 +604,26 @@ const SectionRenderer = ({ section, theme, slug }: SectionRendererProps) => {
             {/* Product Selection - multi select */}
             {products.length > 0 && (
               <div className="mb-8">
-                <h3 className="text-lg font-semibold mb-4">প্রোডাক্ট সিলেক্ট করুন 👇</h3>
+                <h3 className="text-lg font-semibold mb-4">কালার / প্রোডাক্ট সিলেক্ট করুন 👇</h3>
                 <div className="grid sm:grid-cols-2 gap-3">
                   {products.map((product) =>
                     product.variations.map((variation) => {
                       const isChecked = !!selectedItems[variation.id];
                       const qty = selectedItems[variation.id] || 1;
                       const img = variation.image_url || product.images?.[0];
+                      const isOutOfStock = variation.stock <= 0;
                       return (
                         <div
                           key={variation.id}
                           onClick={() => toggleItem(variation.id)}
-                          className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
+                          className={`flex items-start gap-3 p-3 rounded-lg border transition-colors ${
                             isChecked ? 'bg-amber-50 border-amber-500' : 'bg-gray-50 border-gray-200 hover:bg-gray-100'
-                          }`}
+                          } ${isOutOfStock ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}`}
                         >
                           <input
                             type="checkbox"
                             checked={isChecked}
+                            disabled={isOutOfStock}
                             onChange={() => toggleItem(variation.id)}
                             onClick={(e) => e.stopPropagation()}
                             className="mt-1 h-4 w-4 flex-shrink-0 accent-amber-600"
@@ -627,13 +634,15 @@ const SectionRenderer = ({ section, theme, slug }: SectionRendererProps) => {
                             )}
                           </div>
                           <div className="flex-1 min-w-0">
-                            <p className="font-semibold text-sm md:text-base truncate">
+                            <p className="font-semibold text-sm md:text-base break-words">
                               {variation.name} <span className="text-gray-500 font-normal">× {qty}</span>
                             </p>
+                            {isOutOfStock && <p className="text-xs text-destructive mt-1">স্টক শেষ</p>}
                             <div className="flex items-center gap-3 mt-2 flex-wrap">
                               <div className="flex items-center border rounded bg-white">
                                 <button
                                   type="button"
+                                  disabled={!isChecked}
                                   onClick={(e) => { e.stopPropagation(); changeItemQty(variation.id, -1); }}
                                   className="w-7 h-7 flex items-center justify-center text-gray-600 hover:bg-gray-100"
                                 >
@@ -642,6 +651,7 @@ const SectionRenderer = ({ section, theme, slug }: SectionRendererProps) => {
                                 <span className="w-8 text-center text-sm font-medium">{qty}</span>
                                 <button
                                   type="button"
+                                  disabled={!isChecked || qty >= variation.stock}
                                   onClick={(e) => { e.stopPropagation(); changeItemQty(variation.id, 1); }}
                                   className="w-7 h-7 flex items-center justify-center text-gray-600 hover:bg-gray-100"
                                 >
