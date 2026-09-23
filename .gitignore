@@ -12,6 +12,10 @@ dist
 dist-ssr
 *.local
 
+# Migration backups, database credentials, and generated imports must never be committed.
+scripts/migrate-lovable-to-supabase/00-config.sh
+migration-private/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# Copy to 00-config.sh. It is ignored by git because it contains secrets.
+#   cp 00-config.sh.example 00-config.sh
+
+# Lovable source. The bucket is public, so the source publishable/anon key is
+# sufficient for listing objects; never put a source service-role key in git.
+SOURCE_URL='https://qrmatuhynplcqlrzpcri.supabase.co'
+SOURCE_ANON_KEY=''
+
+# Destination: this repository's project-scoped Supabase project.
+TARGET_URL='https://kawthlgchigwitlarrut.supabase.co'
+TARGET_SERVICE_KEY=''
+
+# Copy the Session Pooler connection string from Supabase Dashboard -> Connect.
+# Use the password from the same dialog. Do not use the transaction pooler.
+TARGET_DB_URL='postgresql://postgres.kawthlgchigwitlarrut:<password>@aws-<region>.pooler.supabase.com:5432/postgres?sslmode=require'
+
+BUCKET='shop-assets'
+WORKDIR="${WORKDIR:-$PWD/migration-private}"
+PG_IMAGE='postgres:17'
