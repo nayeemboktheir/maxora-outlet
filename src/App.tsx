@@ -115,7 +115,7 @@ const App = () => (
               <Route path="/admin/categories" element={<AdminLayout><AdminCategories /></AdminLayout>} />
               <Route path="/admin/orders" element={<AdminLayout><AdminOrders /></AdminLayout>} />
               <Route path="/admin/incomplete-orders" element={<AdminLayout><AdminIncompleteOrders /></AdminLayout>} />
-              <Route path="/admin/order-protection" element={<AdminOrderProtection />} />
+              <Route path="/admin/order-protection" element={<AdminLayout><AdminOrderProtection /></AdminLayout>} />
               <Route path="/admin/contact-submissions" element={<AdminLayout><AdminContactSubmissions /></AdminLayout>} />
               <Route path="/admin/landing-pages" element={<AdminLayout><AdminLandingPages /></AdminLayout>} />
               <Route path="/admin/landing-pages/:id" element={<AdminLayout><AdminLandingPageEditor /></AdminLayout>} />
@@ -130,7 +130,7 @@ const App = () => (
               <Route path="/admin/shop-settings" element={<AdminLayout><AdminShopSettings /></AdminLayout>} />
               <Route path="/admin/site-settings" element={<AdminLayout><AdminSiteSettings /></AdminLayout>} />
               <Route path="/admin/home-page-edit" element={<AdminLayout><AdminHomePageEdit /></AdminLayout>} />
-              <Route path="/admin/landing-video-settings" element={<AdminLandingVideoSettings />} />
+              <Route path="/admin/landing-video-settings" element={<AdminLayout><AdminLandingVideoSettings /></AdminLayout>} />
               
 
               {/* Catch all - redirect to main page */}

@@ -202,18 +202,18 @@ interface AdminLayoutProps {
 }
 
 export default function AdminLayout({ children }: AdminLayoutProps) {
-  const { user, isLoading, isAdmin } = useAuth();
+  const { user, isLoading, isAdminLoading, isAdmin } = useAuth();
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (!isLoading && !user) {
+    if (!isLoading && !isAdminLoading && !user) {
       navigate('/auth');
-    } else if (!isLoading && user && !isAdmin) {
+    } else if (!isLoading && !isAdminLoading && user && !isAdmin) {
       navigate('/');
     }
-  }, [user, isLoading, isAdmin, navigate]);
+  }, [user, isLoading, isAdminLoading, isAdmin, navigate]);
 
-  if (isLoading) {
+  if (isLoading || isAdminLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="space-y-4 w-64">

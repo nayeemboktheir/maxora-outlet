@@ -45,17 +45,17 @@ const AuthPage = () => {
   const [forgotEmail, setForgotEmail] = useState('');
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  const { signIn, signUp, user, isAdmin, isLoading: isAuthLoading } = useAuth();
+  const { signIn, signUp, user, isAdmin, isLoading: isAuthLoading, isAdminLoading } = useAuth();
   const navigate = useNavigate();
 
   // Redirect if already logged in
   useEffect(() => {
-    if (isAuthLoading) return;
+    if (isAuthLoading || isAdminLoading) return;
 
     if (user) {
       navigate(isAdmin ? '/admin' : '/my-account', { replace: true });
     }
-  }, [user, isAdmin, isAuthLoading, navigate]);
+  }, [user, isAdmin, isAuthLoading, isAdminLoading, navigate]);
 
   const validateForm = () => {
     try {

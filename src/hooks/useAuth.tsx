@@ -6,6 +6,7 @@ interface AuthContextType {
   user: User | null;
   session: Session | null;
   isLoading: boolean;
+  isAdminLoading: boolean;
   isAdmin: boolean;
   signUp: (email: string, password: string, fullName: string, phone?: string) => Promise<{ error: Error | null }>;
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
@@ -48,6 +49,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isAdminLoading, setIsAdminLoading] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const initializedRef = useRef(false);
   const adminCheckRef = useRef<string | null>(null);
@@ -109,13 +111,16 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
       if (!nextSession?.user) {
         clearRetryTimeout();
+        setIsAdminLoading(false);
         setIsAdmin(false);
         adminCheckRef.current = null;
         return;
       }
 
       clearRetryTimeout();
+      setIsAdminLoading(true);
       const roleCheckResult = await checkAdminRole(nextSession.user.id);
+      if (isMounted) setIsAdminLoading(false);
 
       if (roleCheckResult === null && isMounted) {
         adminRetryTimeoutRef.current = setTimeout(() => {
@@ -151,6 +156,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         if (isMounted) {
           setSession(null);
           setUser(null);
+          setIsAdminLoading(false);
           setIsAdmin(false);
           adminCheckRef.current = null;
         }
@@ -230,6 +236,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       user,
       session,
       isLoading,
+      isAdminLoading,
       isAdmin,
       signUp,
       signIn,
