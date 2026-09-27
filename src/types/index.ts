@@ -53,6 +53,7 @@ export interface CartItem {
   quantity: number;
   variation?: ProductVariation;
   color?: string;
+  size?: string;
 }
 
 export interface User {

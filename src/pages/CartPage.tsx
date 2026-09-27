@@ -22,8 +22,8 @@ const CartPage = () => {
   const shippingCost = total >= 2000 ? 0 : 100;
   const grandTotal = total + shippingCost;
 
-  const handleRemove = (productId: string, variationId?: string) => {
-    dispatch(removeFromCart({ productId, variationId }));
+  const handleRemove = (productId: string, variationId?: string, color?: string, size?: string) => {
+    dispatch(removeFromCart({ productId, variationId, color, size }));
     toast.success('Item removed from cart');
   };
 
@@ -117,6 +117,7 @@ const CartPage = () => {
                               productId: item.product.id,
                               variationId: item.variation?.id,
                               color: item.color,
+                              size: item.size,
                               quantity: item.quantity - 1 
                             }))}
                             className="p-2 hover:bg-muted transition-colors"
@@ -132,6 +133,7 @@ const CartPage = () => {
                               productId: item.product.id,
                               variationId: item.variation?.id,
                               color: item.color,
+                              size: item.size,
                               quantity: item.quantity + 1 
                             }))}
                             className="p-2 hover:bg-muted transition-colors"
@@ -147,7 +149,7 @@ const CartPage = () => {
                           <Button
                             variant="ghost"
                             size="icon"
-                            onClick={() => handleRemove(item.product.id, item.variation?.id)}
+                            onClick={() => handleRemove(item.product.id, item.variation?.id, item.color, item.size)}
                             className="text-muted-foreground hover:text-destructive"
                           >
                             <Trash2 className="h-4 w-4" />

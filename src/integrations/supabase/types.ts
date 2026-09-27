@@ -118,6 +118,7 @@ export type Database = {
           product_id: string
           quantity: number
           user_id: string
+          size_name: string | null
           variation_id: string | null
         }
         Insert: {
@@ -127,6 +128,7 @@ export type Database = {
           product_id: string
           quantity?: number
           user_id: string
+          size_name?: string | null
           variation_id?: string | null
         }
         Update: {
@@ -136,6 +138,7 @@ export type Database = {
           product_id?: string
           quantity?: number
           user_id?: string
+          size_name?: string | null
           variation_id?: string | null
         }
         Relationships: [
@@ -501,6 +504,7 @@ export type Database = {
           product_image: string | null
           product_name: string
           quantity: number
+          size_name: string | null
           variation_id: string | null
           variation_name: string | null
         }
@@ -514,6 +518,7 @@ export type Database = {
           product_image?: string | null
           product_name: string
           quantity: number
+          size_name?: string | null
           variation_id?: string | null
           variation_name?: string | null
         }
@@ -527,6 +532,7 @@ export type Database = {
           product_image?: string | null
           product_name?: string
           quantity?: number
+          size_name?: string | null
           variation_id?: string | null
           variation_name?: string | null
         }
@@ -640,6 +646,86 @@ export type Database = {
           user_id?: string | null
         }
         Relationships: []
+      }
+      product_sizes: {
+        Row: {
+          created_at: string
+          id: string
+          is_active: boolean | null
+          name: string
+          product_id: string
+          sort_order: number | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_active?: boolean | null
+          name: string
+          product_id: string
+          sort_order?: number | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_active?: boolean | null
+          name?: string
+          product_id?: string
+          sort_order?: number | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "product_sizes_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      product_variation_stock: {
+        Row: {
+          created_at: string
+          id: string
+          size_id: string
+          stock: number
+          updated_at: string
+          variation_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          size_id: string
+          stock?: number
+          updated_at?: string
+          variation_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          size_id?: string
+          stock?: number
+          updated_at?: string
+          variation_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "product_variation_stock_size_id_fkey"
+            columns: ["size_id"]
+            isOneToOne: false
+            referencedRelation: "product_sizes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "product_variation_stock_variation_id_fkey"
+            columns: ["variation_id"]
+            isOneToOne: false
+            referencedRelation: "product_variations"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       product_variations: {
         Row: {

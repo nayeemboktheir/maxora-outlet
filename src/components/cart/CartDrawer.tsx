@@ -117,6 +117,7 @@ const CartDrawer = () => {
                                 productId: item.product.id,
                                 variationId: item.variation?.id,
                                 color: item.color,
+                                size: item.size,
                                 quantity: item.quantity - 1 
                               }))}
                               disabled={item.quantity <= 1}
@@ -134,6 +135,7 @@ const CartDrawer = () => {
                                 productId: item.product.id,
                                 variationId: item.variation?.id,
                                 color: item.color,
+                                size: item.size,
                                 quantity: item.quantity + 1 
                               }))}
                             >
@@ -145,7 +147,7 @@ const CartDrawer = () => {
                           variant="ghost"
                           size="icon"
                           className="text-muted-foreground hover:text-destructive"
-                          onClick={() => dispatch(removeFromCart({ productId: item.product.id, variationId: item.variation?.id, color: item.color }))}
+                          onClick={() => dispatch(removeFromCart({ productId: item.product.id, variationId: item.variation?.id, color: item.color, size: item.size }))}
                         >
                           <X className="h-5 w-5" />
                         </Button>

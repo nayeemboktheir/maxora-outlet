@@ -433,12 +433,17 @@ Deno.serve(async (req) => {
         ? i.price
         : dbPrice;
 
+      // Size is a label only - price comes from the variation - so sanitising is enough.
+      const sizeName =
+        typeof i.size === 'string' && i.size.trim() ? i.size.trim().slice(0, 50) : null;
+
       return {
         productId: p.id,
         variationId: v?.id ?? null,
         variationName: v?.name ?? null,
         color: i.color ?? null,
-        name: `${p.name}${v ? ` (${v.name})` : ''}${i.color ? ` [${i.color}]` : ''}`,
+        sizeName: sizeName,
+        name: `${p.name}${v ? ` (${v.name})` : ''}${i.color ? ` [${i.color}]` : ''}${sizeName ? ` - ${sizeName}` : ''}`,
         image: p.images?.[0] ?? null,
         price: itemPrice,
         quantity: i.quantity,
@@ -466,6 +471,7 @@ Deno.serve(async (req) => {
         variationId: null as string | null,
         variationName: null as string | null,
         color: null as string | null,
+        sizeName: null as string | null,
         name: itemName,
         image,
         price,
@@ -486,6 +492,7 @@ Deno.serve(async (req) => {
         variationId: string | null;
         variationName: string | null;
         color: string | null;
+        sizeName: string | null;
         name: string;
         image: string | null;
         price: number;
@@ -496,6 +503,7 @@ Deno.serve(async (req) => {
         variationId: string | null;
         variationName: string | null;
         color: string | null;
+        sizeName: string | null;
         name: string;
         image: string | null;
         price: number;
@@ -568,6 +576,7 @@ Deno.serve(async (req) => {
         product_name: i.name,
         variation_name: i.variationName,
         color: i.color,
+        size_name: i.sizeName,
         product_image: i.image,
         price: i.price,
         quantity: i.quantity,

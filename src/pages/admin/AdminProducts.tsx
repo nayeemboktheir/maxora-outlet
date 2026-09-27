@@ -37,7 +37,7 @@ import { Calendar } from '@/components/ui/calendar';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
-import { Plus, Pencil, Trash2, Search, Package, Upload, X, Image as ImageIcon, Loader2, Play, CalendarIcon, Copy } from 'lucide-react';
+import { Plus, Pencil, Trash2, Search, Package, Upload, X, Image as ImageIcon, Loader2, Play, CalendarIcon, Copy, Ruler } from 'lucide-react';
 import { 
   getAllProducts, 
   createProduct, 
@@ -108,6 +108,16 @@ const initialFormState = {
   is_active: true,
 };
 
+type ProductSizeRow = {
+  id?: string;
+  clientId: string;
+  name: string;
+  sort_order: number;
+};
+
+const comboKey = (variationClientId: string, sizeClientId: string) =>
+  `${variationClientId}|${sizeClientId}`;
+
 export default function AdminProducts() {
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -124,6 +134,12 @@ export default function AdminProducts() {
   // Variations state
   const [variations, setVariations] = useState<ProductVariation[]>([]);
   const [hasVariations, setHasVariations] = useState(false);
+
+  // Size axis + per-(colour, size) stock. `comboStock` is keyed by
+  // `${variationClientId}|${sizeClientId}` so it survives rows that have no DB id yet.
+  const [sizes, setSizes] = useState<ProductSizeRow[]>([]);
+  const [hasSizes, setHasSizes] = useState(false);
+  const [comboStock, setComboStock] = useState<Record<string, number>>({});
 
   // Image upload state
   const [productImages, setProductImages] = useState<string[]>([]);
@@ -191,6 +207,57 @@ export default function AdminProducts() {
       setVariations([]);
       setHasVariations(false);
     }
+
+    await loadSizesAndStock(productId);
+  };
+
+  const loadSizesAndStock = async (productId: string) => {
+    const { data: sizeRows, error: sizeError } = await supabase
+      .from('product_sizes')
+      .select('*')
+      .eq('product_id', productId)
+      .order('sort_order');
+
+    if (sizeError) {
+      console.error('Failed to load sizes:', sizeError);
+      setSizes([]);
+      setHasSizes(false);
+      setComboStock({});
+      return;
+    }
+
+    const loadedSizes = (sizeRows || []).map((row) => ({
+      id: row.id,
+      clientId: row.id,
+      name: row.name,
+      sort_order: row.sort_order || 0,
+    }));
+
+    setSizes(loadedSizes);
+    setHasSizes(loadedSizes.length > 0);
+
+    if (loadedSizes.length === 0) {
+      setComboStock({});
+      return;
+    }
+
+    // Stock rows are keyed by DB ids, which are also the clientIds for loaded rows.
+    const { data: stockRows, error: stockError } = await supabase
+      .from('product_variation_stock')
+      .select('variation_id, size_id, stock')
+      .in('size_id', loadedSizes.map((sz) => sz.id));
+
+    if (stockError) {
+      console.error('Failed to load variation stock:', stockError);
+      setComboStock({});
+      return;
+    }
+
+    const map: Record<string, number> = {};
+    for (const row of stockRows || []) {
+      map[comboKey(row.variation_id, row.size_id)] = row.stock ?? 0;
+    }
+    setComboStock(map);
   };
 
   const filteredProducts = products.filter(product => {
@@ -217,6 +284,9 @@ export default function AdminProducts() {
     setVariations([]);
     setHasVariations(false);
     setProductImages([]);
+    setSizes([]);
+    setHasSizes(false);
+    setComboStock({});
     setIsDialogOpen(true);
   };
 
@@ -277,7 +347,7 @@ export default function AdminProducts() {
 
         if (error) {
           console.error('Upload error:', error);
-          toast.error(`Failed to upload ${file.name}`);
+          toast.error(`Failed to upload ${file.name}: ${error.message}`);
           continue;
         }
 
@@ -328,6 +398,47 @@ export default function AdminProducts() {
 
   const handleRemoveVariation = (clientId: string) => {
     setVariations((prev) => prev.filter((v) => v.clientId !== clientId));
+    // Drop the stock cells that belonged to this colour.
+    setComboStock((prev) => {
+      const next: Record<string, number> = {};
+      for (const [key, value] of Object.entries(prev)) {
+        if (!key.startsWith(`${clientId}|`)) next[key] = value;
+      }
+      return next;
+    });
+  };
+
+  const handleAddSize = () => {
+    setSizes((prev) => [
+      ...prev,
+      { clientId: crypto.randomUUID(), name: '', sort_order: prev.length + 1 },
+    ]);
+  };
+
+  const handleSizeChange = (clientId: string, name: string) => {
+    setSizes((prev) => prev.map((sz) => (sz.clientId === clientId ? { ...sz, name } : sz)));
+  };
+
+  const handleRemoveSize = (clientId: string) => {
+    setSizes((prev) => prev.filter((sz) => sz.clientId !== clientId));
+    setComboStock((prev) => {
+      const next: Record<string, number> = {};
+      for (const [key, value] of Object.entries(prev)) {
+        if (!key.endsWith(`|${clientId}`)) next[key] = value;
+      }
+      return next;
+    });
+  };
+
+  const handleComboStockChange = (
+    variationClientId: string,
+    sizeClientId: string,
+    value: number
+  ) => {
+    setComboStock((prev) => ({
+      ...prev,
+      [comboKey(variationClientId, sizeClientId)]: value,
+    }));
   };
 
   const handleVariationChange = (
@@ -354,7 +465,7 @@ export default function AdminProducts() {
     const { error } = await supabase.storage.from('shop-assets').upload(fileName, file);
     if (error) {
       console.error('Variation image upload error:', error);
-      toast.error('ছবি আপলোড হয়নি');
+      toast.error(`ছবি আপলোড হয়নি: ${error.message}`);
       return;
     }
     const { data: urlData } = supabase.storage.from('shop-assets').getPublicUrl(fileName);
@@ -456,6 +567,109 @@ export default function AdminProducts() {
     }
   };
 
+  const saveSizesAndStock = async (productId: string) => {
+    const validSizes = Array.from(
+      new Map(
+        sizes
+          .filter((sz) => sz.name.trim())
+          .map((sz) => [sz.name.trim().toLowerCase(), sz])
+      ).values()
+    );
+
+    // No sizes: drop the whole size axis for this product.
+    if (!hasSizes || validSizes.length === 0) {
+      const { error } = await supabase.from('product_sizes').delete().eq('product_id', productId);
+      if (error) console.error('Delete sizes error:', error);
+      return;
+    }
+
+    const { data: existingSizes } = await supabase
+      .from('product_sizes')
+      .select('id, name')
+      .eq('product_id', productId);
+
+    const existingByName = new Map(
+      (existingSizes || []).map((sz) => [sz.name.trim().toLowerCase(), sz.id])
+    );
+
+    // clientId -> DB id, so the stock grid can be translated after the sizes land.
+    const sizeIdByClientId = new Map<string, string>();
+    const keptIds = new Set<string>();
+
+    for (let idx = 0; idx < validSizes.length; idx++) {
+      const sz = validSizes[idx];
+      const normalized = sz.name.trim().toLowerCase();
+      const existingId = existingByName.get(normalized);
+
+      if (existingId) {
+        keptIds.add(existingId);
+        sizeIdByClientId.set(sz.clientId, existingId);
+        const { error } = await supabase
+          .from('product_sizes')
+          .update({ name: sz.name.trim(), sort_order: idx + 1 })
+          .eq('id', existingId);
+        if (error) console.error('Update size error:', error);
+      } else {
+        const { data, error } = await supabase
+          .from('product_sizes')
+          .insert({ product_id: productId, name: sz.name.trim(), sort_order: idx + 1 })
+          .select('id')
+          .single();
+        if (error || !data) {
+          console.error('Insert size error:', error);
+          continue;
+        }
+        keptIds.add(data.id);
+        sizeIdByClientId.set(sz.clientId, data.id);
+      }
+    }
+
+    const removedSizeIds = (existingSizes || [])
+      .filter((sz) => !keptIds.has(sz.id))
+      .map((sz) => sz.id);
+    if (removedSizeIds.length > 0) {
+      const { error } = await supabase.from('product_sizes').delete().in('id', removedSizeIds);
+      if (error) console.error('Delete removed sizes error:', error);
+    }
+
+    // Variations were just saved, so re-read them to map clientId -> DB id by name.
+    const { data: savedVariations } = await supabase
+      .from('product_variations')
+      .select('id, name')
+      .eq('product_id', productId);
+
+    const variationIdByName = new Map(
+      (savedVariations || []).map((v) => [v.name.trim().toLowerCase(), v.id])
+    );
+
+    const stockRows: Array<{ variation_id: string; size_id: string; stock: number }> = [];
+    for (const variation of variations) {
+      const variationId = variationIdByName.get(variation.name.trim().toLowerCase());
+      if (!variationId) continue;
+
+      for (const sz of validSizes) {
+        const sizeId = sizeIdByClientId.get(sz.clientId);
+        if (!sizeId) continue;
+
+        stockRows.push({
+          variation_id: variationId,
+          size_id: sizeId,
+          stock: comboStock[comboKey(variation.clientId, sz.clientId)] ?? 0,
+        });
+      }
+    }
+
+    if (stockRows.length > 0) {
+      const { error } = await supabase
+        .from('product_variation_stock')
+        .upsert(stockRows, { onConflict: 'variation_id,size_id' });
+      if (error) {
+        console.error('Save variation stock error:', error);
+        toast.error(`স্টক সেভ হয়নি: ${error.message}`);
+      }
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitting(true);
@@ -500,6 +714,7 @@ export default function AdminProducts() {
 
       // Save variations
       await saveVariations(productId);
+      await saveSizesAndStock(productId);
 
       setIsDialogOpen(false);
       loadData();
@@ -1001,6 +1216,124 @@ export default function AdminProducts() {
                       আরেকটি কালার / অপশন যোগ করুন
                     </Button>
 
+                  </div>
+                )}
+              </div>
+
+              {/* Size axis */}
+              <div className="border-t pt-4 mt-4">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2">
+                    <Ruler className="h-5 w-5 text-primary" />
+                    <div>
+                      <Label className="text-base font-semibold">সাইজ (Size)</Label>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        যেমন: M, L, XL — প্রতিটি কালারের জন্য আলাদা স্টক দিতে পারবেন
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Switch
+                      id="hasSizes"
+                      checked={hasSizes}
+                      onCheckedChange={(checked) => {
+                        setHasSizes(checked);
+                        if (checked && sizes.length === 0) handleAddSize();
+                      }}
+                    />
+                    <Label htmlFor="hasSizes" className="text-sm">চালু করুন</Label>
+                  </div>
+                </div>
+
+                {hasSizes && (
+                  <div className="space-y-3 bg-muted/50 rounded-lg p-4">
+                    <div className="flex flex-wrap gap-2">
+                      {sizes.map((sz) => (
+                        <div key={sz.clientId} className="flex items-center gap-1">
+                          <Input
+                            className="w-28"
+                            placeholder="যেমন: L"
+                            value={sz.name}
+                            onChange={(e) => handleSizeChange(sz.clientId, e.target.value)}
+                          />
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
+                            onClick={() => handleRemoveSize(sz.clientId)}
+                          >
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+
+                    <Button type="button" variant="outline" size="sm" onClick={handleAddSize}>
+                      <Plus className="h-4 w-4 mr-1" />
+                      আরেকটি সাইজ যোগ করুন
+                    </Button>
+
+                    {/* Stock per (colour, size) */}
+                    {hasVariations && variations.length > 0 && sizes.some((sz) => sz.name.trim()) && (
+                      <div className="pt-4 border-t mt-4">
+                        <Label className="text-sm font-semibold">
+                          স্টক (কালার × সাইজ)
+                        </Label>
+                        <p className="text-xs text-muted-foreground mt-1 mb-3">
+                          যে ঘরে 0 দিবেন, সেই কম্বিনেশন কাস্টমার কিনতে পারবে না
+                        </p>
+                        <div className="overflow-x-auto">
+                          <table className="text-sm border-separate border-spacing-1">
+                            <thead>
+                              <tr>
+                                <th className="text-left text-xs font-medium text-muted-foreground px-2">
+                                  কালার
+                                </th>
+                                {sizes
+                                  .filter((sz) => sz.name.trim())
+                                  .map((sz) => (
+                                    <th
+                                      key={sz.clientId}
+                                      className="text-xs font-medium text-muted-foreground px-2"
+                                    >
+                                      {sz.name}
+                                    </th>
+                                  ))}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {variations.map((variation) => (
+                                <tr key={variation.clientId}>
+                                  <td className="px-2 whitespace-nowrap max-w-[10rem] truncate">
+                                    {variation.name || <span className="text-muted-foreground">—</span>}
+                                  </td>
+                                  {sizes
+                                    .filter((sz) => sz.name.trim())
+                                    .map((sz) => (
+                                      <td key={sz.clientId}>
+                                        <Input
+                                          type="number"
+                                          min={0}
+                                          className="w-20"
+                                          value={comboStock[comboKey(variation.clientId, sz.clientId)] ?? 0}
+                                          onChange={(e) =>
+                                            handleComboStockChange(
+                                              variation.clientId,
+                                              sz.clientId,
+                                              parseInt(e.target.value) || 0
+                                            )
+                                          }
+                                        />
+                                      </td>
+                                    ))}
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

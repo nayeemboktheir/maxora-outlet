@@ -26,3 +26,5 @@ migration-private/
 *.njsproj
 *.sln
 *.sw?
+.claude
+.agents
