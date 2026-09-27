@@ -37,7 +37,7 @@ import { Calendar } from '@/components/ui/calendar';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
-import { Plus, Pencil, Trash2, Search, Package, Upload, X, Image as ImageIcon, Loader2, Play, CalendarIcon, Copy, Ruler } from 'lucide-react';
+import { Plus, Pencil, Trash2, Search, Package, Upload, X, Image as ImageIcon, Loader2, Play, CalendarIcon, Copy, Ruler, ArrowDownToLine } from 'lucide-react';
 import { 
   getAllProducts, 
   createProduct, 
@@ -435,6 +435,43 @@ export default function AdminProducts() {
     );
   };
 
+  /**
+   * Products entered before the size axis existed kept their sizes in the
+   * colour group, which is the only group that had prices. This carries those
+   * rows across intact rather than making them be retyped; the colour group is
+   * left empty and switched off, ready for real colours.
+   */
+  const handleMoveVariationsToSizes = () => {
+    const rows = variations.filter((v) => v.name.trim());
+    if (rows.length === 0) {
+      toast.error('সরানোর মতো কোনো রো নেই');
+      return;
+    }
+
+    setSizes((prev) => {
+      const taken = new Set(prev.map((sz) => sz.name.trim().toLowerCase()));
+      const moved = rows
+        .filter((v) => !taken.has(v.name.trim().toLowerCase()))
+        .map((v, idx) => ({
+          clientId: crypto.randomUUID(),
+          name: v.name.trim(),
+          sort_order: prev.length + idx + 1,
+          price: v.price > 0 ? v.price : undefined,
+          original_price: v.original_price,
+          stock: v.stock,
+          image_url: v.image_url ?? null,
+        }));
+      return [...prev, ...moved];
+    });
+
+    setHasSizes(true);
+    setVariations([]);
+    setHasVariations(false);
+    // The colour axis is gone, so every (colour, size) cell it keyed is stale.
+    setComboStock({});
+    toast.success(`${rows.length}টি রো সাইজে সরানো হয়েছে`);
+  };
+
   const handleSizeImageUpload = async (clientId: string, file: File) => {
     const url = await uploadOptionImage(file, 'sizes');
     if (url) handleSizeChange(clientId, 'image_url', url);
@@ -503,14 +540,56 @@ export default function AdminProducts() {
     if (url) handleVariationChange(clientId, 'image_url', url);
   };
 
-  const saveVariations = async (productId: string) => {
-    if (!hasVariations || variations.length === 0) {
-      // If no variations, just delete all existing ones
-      const { error: deleteError } = await supabase
+  /**
+   * Retire variations without breaking order history.
+   *
+   * `order_items.variation_id` and `cart_items.variation_id` are both NO ACTION,
+   * so deleting a variation any order references raises a FK violation. Those
+   * rows get deactivated instead - the storefront filters on `is_active`, so
+   * they disappear from the picker while past orders still resolve their name.
+   * Genuinely unused rows are deleted outright.
+   */
+  const retireVariations = async (variationIds: string[]) => {
+    if (variationIds.length === 0) return;
+
+    const [{ data: orderRefs }, { data: cartRefs }] = await Promise.all([
+      supabase.from('order_items').select('variation_id').in('variation_id', variationIds),
+      supabase.from('cart_items').select('variation_id').in('variation_id', variationIds),
+    ]);
+
+    const referenced = new Set(
+      [...(orderRefs || []), ...(cartRefs || [])]
+        .map((r) => r.variation_id)
+        .filter((id): id is string => !!id)
+    );
+
+    const deletable = variationIds.filter((id) => !referenced.has(id));
+    const deactivatable = variationIds.filter((id) => referenced.has(id));
+
+    if (deactivatable.length > 0) {
+      const { error } = await supabase
+        .from('product_variations')
+        .update({ is_active: false })
+        .in('id', deactivatable);
+      if (error) console.error('Deactivate variations error:', error);
+    }
+
+    if (deletable.length > 0) {
+      const { error } = await supabase
         .from('product_variations')
         .delete()
+        .in('id', deletable);
+      if (error) console.error('Delete variations error:', error);
+    }
+  };
+
+  const saveVariations = async (productId: string) => {
+    if (!hasVariations || variations.length === 0) {
+      const { data: existing } = await supabase
+        .from('product_variations')
+        .select('id')
         .eq('product_id', productId);
-      if (deleteError) console.error('Delete variations error:', deleteError);
+      await retireVariations((existing || []).map((v) => v.id));
       return;
     }
 
@@ -568,13 +647,7 @@ export default function AdminProducts() {
       .filter((v) => !usedExistingIds.has(v.id))
       .map((v) => v.id);
 
-    if (toDeleteIds.length > 0) {
-      const { error } = await supabase
-        .from('product_variations')
-        .delete()
-        .in('id', toDeleteIds);
-      if (error) console.error('Delete removed variations error:', error);
-    }
+    await retireVariations(toDeleteIds);
 
     // Update existing variations
     for (const item of toUpdate) {
@@ -874,7 +947,7 @@ export default function AdminProducts() {
               Add Product
             </Button>
           </DialogTrigger>
-          <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+          <DialogContent className="max-w-3xl xl:max-w-6xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>
                 {editingProduct ? 'Edit Product' : 'Add New Product'}
@@ -1121,6 +1194,9 @@ export default function AdminProducts() {
                 </div>
               </div>
 
+              {/* The two option axes sit side by side once there is room for
+                  two 5-column rows; below xl they stack as before. */}
+              <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 items-start">
               {/* Image-based color / product options */}
               <div className="border-t pt-4 mt-4">
                 <div className="flex items-center justify-between mb-4">
@@ -1257,6 +1333,21 @@ export default function AdminProducts() {
                       <Plus className="h-4 w-4 mr-1" />
                       আরেকটি কালার / অপশন যোগ করুন
                     </Button>
+
+                    {/* Escape hatch for products whose sizes were entered here
+                        before the size group existed. */}
+                    {variations.some((v) => v.name.trim()) && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={handleMoveVariationsToSizes}
+                        className="mt-2 ml-2 text-xs"
+                      >
+                        <ArrowDownToLine className="h-4 w-4 mr-1" />
+                        এই রো-গুলো সাইজে সরান
+                      </Button>
+                    )}
 
                   </div>
                 )}
@@ -1395,69 +1486,73 @@ export default function AdminProducts() {
                       আরেকটি সাইজ যোগ করুন
                     </Button>
 
-                    {/* Stock per (colour, size) */}
-                    {hasVariations && variations.length > 0 && sizes.some((sz) => sz.name.trim()) && (
-                      <div className="pt-4 border-t mt-4">
-                        <Label className="text-sm font-semibold">
-                          স্টক (কালার × সাইজ)
-                        </Label>
-                        <p className="text-xs text-muted-foreground mt-1 mb-3">
-                          যে ঘরে 0 দিবেন, সেই কম্বিনেশন কাস্টমার কিনতে পারবে না
-                        </p>
-                        <div className="overflow-x-auto">
-                          <table className="text-sm border-separate border-spacing-1">
-                            <thead>
-                              <tr>
-                                <th className="text-left text-xs font-medium text-muted-foreground px-2">
-                                  কালার
-                                </th>
-                                {sizes
-                                  .filter((sz) => sz.name.trim())
-                                  .map((sz) => (
-                                    <th
-                                      key={sz.clientId}
-                                      className="text-xs font-medium text-muted-foreground px-2"
-                                    >
-                                      {sz.name}
-                                    </th>
-                                  ))}
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {variations.map((variation) => (
-                                <tr key={variation.clientId}>
-                                  <td className="px-2 whitespace-nowrap max-w-[10rem] truncate">
-                                    {variation.name || <span className="text-muted-foreground">—</span>}
-                                  </td>
-                                  {sizes
-                                    .filter((sz) => sz.name.trim())
-                                    .map((sz) => (
-                                      <td key={sz.clientId}>
-                                        <Input
-                                          type="number"
-                                          min={0}
-                                          className="w-20"
-                                          value={comboStock[comboKey(variation.clientId, sz.clientId)] ?? 0}
-                                          onChange={(e) =>
-                                            handleComboStockChange(
-                                              variation.clientId,
-                                              sz.clientId,
-                                              parseInt(e.target.value) || 0
-                                            )
-                                          }
-                                        />
-                                      </td>
-                                    ))}
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      </div>
-                    )}
                   </div>
                 )}
               </div>
+              </div>
+
+              {/* Stock per (colour, size) */}
+              {/* Full width under both columns: the grid gets wide fast. It used to
+                  live inside the size panel, so it still needs that panel's guard. */}
+              {hasSizes && hasVariations && variations.length > 0 && sizes.some((sz) => sz.name.trim()) && (
+                <div className="pt-4 border-t mt-4">
+                  <Label className="text-sm font-semibold">
+                    স্টক (কালার × সাইজ)
+                  </Label>
+                  <p className="text-xs text-muted-foreground mt-1 mb-3">
+                    যে ঘরে 0 দিবেন, সেই কম্বিনেশন কাস্টমার কিনতে পারবে না
+                  </p>
+                  <div className="overflow-x-auto">
+                    <table className="text-sm border-separate border-spacing-1">
+                      <thead>
+                        <tr>
+                          <th className="text-left text-xs font-medium text-muted-foreground px-2">
+                            কালার
+                          </th>
+                          {sizes
+                            .filter((sz) => sz.name.trim())
+                            .map((sz) => (
+                              <th
+                                key={sz.clientId}
+                                className="text-xs font-medium text-muted-foreground px-2"
+                              >
+                                {sz.name}
+                              </th>
+                            ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {variations.map((variation) => (
+                          <tr key={variation.clientId}>
+                            <td className="px-2 whitespace-nowrap max-w-[10rem] truncate">
+                              {variation.name || <span className="text-muted-foreground">—</span>}
+                            </td>
+                            {sizes
+                              .filter((sz) => sz.name.trim())
+                              .map((sz) => (
+                                <td key={sz.clientId}>
+                                  <Input
+                                    type="number"
+                                    min={0}
+                                    className="w-20"
+                                    value={comboStock[comboKey(variation.clientId, sz.clientId)] ?? 0}
+                                    onChange={(e) =>
+                                      handleComboStockChange(
+                                        variation.clientId,
+                                        sz.clientId,
+                                        parseInt(e.target.value) || 0
+                                      )
+                                    }
+                                  />
+                                </td>
+                              ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
 
               <div className="flex justify-end gap-2 pt-4">
                 <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>
