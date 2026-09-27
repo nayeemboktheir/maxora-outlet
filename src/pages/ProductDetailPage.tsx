@@ -19,7 +19,8 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import ProductCard from '@/components/products/ProductCard';
 import { fetchProductBySlug, fetchProducts } from '@/services/productService';
-import { Product, ProductVariation } from '@/types';
+import { Product, ProductSizeOption, ProductVariation } from '@/types';
+import { resolveVariantPricing } from '@/lib/pricing';
 import { useAppDispatch, useAppSelector } from '@/store/hooks';
 import { addToCart, openCart } from '@/store/slices/cartSlice';
 import { toggleWishlist, selectWishlistItems } from '@/store/slices/wishlistSlice';
@@ -38,8 +39,8 @@ const ProductDetailPage = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [selectedVariation, setSelectedVariation] = useState<ProductVariation | undefined>(undefined);
   const [selectedColor, setSelectedColor] = useState<string | undefined>(undefined);
-  const [sizes, setSizes] = useState<{ id: string; name: string }[]>([]);
-  const [selectedSize, setSelectedSize] = useState<{ id: string; name: string } | undefined>(undefined);
+  const [sizes, setSizes] = useState<ProductSizeOption[]>([]);
+  const [selectedSize, setSelectedSize] = useState<ProductSizeOption | undefined>(undefined);
   // stock per `${variationId}|${sizeId}`
   const [comboStock, setComboStock] = useState<Record<string, number>>({});
   
@@ -123,11 +124,11 @@ const ProductDetailPage = () => {
         if (productData) {
           const { data: sizeRows } = await supabase
             .from('product_sizes')
-            .select('id, name')
+            .select('id, name, price, original_price, image_url, stock, sort_order')
             .eq('product_id', productData.id)
             .order('sort_order');
 
-          const loadedSizes = sizeRows || [];
+          const loadedSizes: ProductSizeOption[] = sizeRows || [];
           setSizes(loadedSizes);
 
           if (loadedSizes.length > 0) {
@@ -185,9 +186,13 @@ const ProductDetailPage = () => {
 
   const formatPrice = (price: number) => `৳${price.toLocaleString('en-BD')}`;
   
-  // Get display price based on selected variation or base product
-  const displayPrice = selectedVariation?.price ?? product.price;
-  const displayOriginalPrice = selectedVariation?.original_price ?? product.originalPrice;
+  // Price comes from whichever axis is most specific: size, then colour, then
+  // the product itself. See `resolveVariantPricing` for why size wins.
+  const { price: displayPrice, originalPrice: displayOriginalPrice } = resolveVariantPricing(
+    product,
+    selectedVariation,
+    selectedSize
+  );
   const discountAmount = displayOriginalPrice ? displayOriginalPrice - displayPrice : 0;
   const hasSizes = sizes.length > 0;
   // Legacy single-axis colour list, only used by products with no variations.
@@ -202,7 +207,12 @@ const ProductDetailPage = () => {
       ? selectedVariation && selectedSize
         ? stockFor(selectedVariation.id, selectedSize.id)
         : 0
-      : selectedVariation?.stock ?? product.stock;
+      : hasSizes
+        // Size-only products keep their stock on the size row itself.
+        ? selectedSize
+          ? selectedSize.stock ?? 0
+          : 0
+        : selectedVariation?.stock ?? product.stock;
 
   const handleAddToCart = () => {
     if (hasVariations && !selectedVariation) {
@@ -213,8 +223,8 @@ const ProductDetailPage = () => {
       toast.error('সাইজ সিলেক্ট করুন');
       return;
     }
-    if (hasSizes && hasVariations && currentStock <= 0) {
-      toast.error('এই কম্বিনেশন স্টকে নেই');
+    if (hasSizes && currentStock <= 0) {
+      toast.error(hasVariations ? 'এই কম্বিনেশন স্টকে নেই' : 'এই সাইজ স্টকে নেই');
       return;
     }
     if (hasColors && !selectedColor) {
@@ -222,7 +232,7 @@ const ProductDetailPage = () => {
       return;
     }
     
-    dispatch(addToCart({ product, quantity, variation: selectedVariation, color: selectedColor, size: selectedSize?.name }));
+    dispatch(addToCart({ product, quantity, variation: selectedVariation, color: selectedColor, size: selectedSize?.name, sizeOption: selectedSize }));
     dispatch(openCart());
     // Track AddToCart event - both browser pixel and server CAPI
     const eventId = generateEventId('AddToCart');
@@ -258,8 +268,8 @@ const ProductDetailPage = () => {
       toast.error('সাইজ সিলেক্ট করুন');
       return;
     }
-    if (hasSizes && hasVariations && currentStock <= 0) {
-      toast.error('এই কম্বিনেশন স্টকে নেই');
+    if (hasSizes && currentStock <= 0) {
+      toast.error(hasVariations ? 'এই কম্বিনেশন স্টকে নেই' : 'এই সাইজ স্টকে নেই');
       return;
     }
     if (hasColors && !selectedColor) {
@@ -267,7 +277,7 @@ const ProductDetailPage = () => {
       return;
     }
     
-    dispatch(addToCart({ product, quantity, variation: selectedVariation, color: selectedColor, size: selectedSize?.name }));
+    dispatch(addToCart({ product, quantity, variation: selectedVariation, color: selectedColor, size: selectedSize?.name, sizeOption: selectedSize }));
     
     // Track AddToCart event - both browser pixel and server CAPI
     const eventId = generateEventId('AddToCart');
@@ -461,14 +471,15 @@ const ProductDetailPage = () => {
                       ? selectedVariation
                         ? stockFor(selectedVariation.id, size.id) <= 0
                         : !product.variations!.some((v) => stockFor(v.id, size.id) > 0)
-                      : false;
+                      // Without a colour axis the size row carries its own stock.
+                      : (size.stock ?? 0) <= 0;
 
                     return (
                       <button
                         key={size.id}
                         disabled={soldOut}
                         onClick={() => setSelectedSize(size)}
-                        className={`min-w-[60px] px-4 py-2.5 rounded-full text-sm font-medium border transition-all ${
+                        className={`min-w-[60px] px-4 py-2.5 rounded-2xl text-sm font-medium border transition-all flex items-center gap-2 ${
                           soldOut
                             ? 'border-border bg-muted text-muted-foreground line-through cursor-not-allowed opacity-60'
                             : selectedSize?.id === size.id
@@ -476,7 +487,20 @@ const ProductDetailPage = () => {
                             : 'border-border bg-background text-foreground hover:border-foreground'
                         }`}
                       >
-                        {size.name}
+                        {size.image_url && (
+                          <img
+                            src={size.image_url}
+                            alt=""
+                            className="w-8 h-8 rounded-lg object-cover shrink-0"
+                          />
+                        )}
+                        <span className="flex flex-col items-start leading-tight">
+                          <span>{size.name}</span>
+                          {/* Only worth showing when this size sets its own price. */}
+                          {size.price ? (
+                            <span className="text-xs opacity-80">{formatPrice(size.price)}</span>
+                          ) : null}
+                        </span>
                       </button>
                     );
                   })}

@@ -1,3 +1,4 @@
+import { cartItemUnitPrice } from '@/lib/pricing';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Trash2, Plus, Minus, ArrowLeft, ArrowRight, ShoppingBag } from 'lucide-react';
@@ -67,7 +68,7 @@ const CartPage = () => {
             <div className="lg:col-span-2 space-y-4">
               {cartItems.map((item, index) => {
                 const itemKey = item.variation?.id ? `${item.product.id}-${item.variation.id}` : item.product.id;
-                const displayPrice = item.variation?.price ?? item.product.price;
+                const displayPrice = cartItemUnitPrice(item);
                 const originalPrice = item.variation?.original_price ?? item.product.originalPrice;
                 
                 return (

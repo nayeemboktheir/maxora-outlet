@@ -1,5 +1,6 @@
 import { supabase } from '@/integrations/supabase/client';
 import { Order, CartItem } from '@/types';
+import { cartItemUnitPrice } from '@/lib/pricing';
 
 
 interface CreateOrderData {
@@ -26,11 +27,13 @@ export const createOrder = async (orderData: CreateOrderData): Promise<Order> =>
           variationId: i.variation?.id,
           color: i.color ?? null,
           size: i.size ?? null,
+          // The id lets the server price the size itself; `size` alone is just a label.
+          sizeId: i.sizeOption?.id ?? null,
           quantity: i.quantity,
           // Provide extra fields so orders can still be placed when the catalog uses non-UUID mock ids
           productName: i.product.name,
           productImage: i.product.images?.[0] ?? null,
-          price: i.product.price,
+          price: cartItemUnitPrice(i),
         })),
         shipping: {
           name: orderData.shippingAddress.name,

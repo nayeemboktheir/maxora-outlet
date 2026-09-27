@@ -1,3 +1,4 @@
+import { cartItemUnitPrice } from '@/lib/pricing';
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAppSelector, useAppDispatch } from '@/store/hooks';
@@ -261,7 +262,7 @@ const CheckoutPage = () => {
       items: cartItems.map(item => ({
         id: item.product.id,
         name: item.product.name,
-        price: item.product.price,
+        price: cartItemUnitPrice(item),
         quantity: item.quantity,
         image: item.product.images[0] || null,
       })),
@@ -435,7 +436,7 @@ const CheckoutPage = () => {
       const orderItems = cartItems.map(item => ({
         productId: item.product.id,
         productName: item.product.name,
-        price: item.product.price,
+        price: cartItemUnitPrice(item),
         quantity: item.quantity,
       }));
       
@@ -597,7 +598,7 @@ const CheckoutPage = () => {
                     const itemKey = item.variation?.id
                       ? `${item.product.id}-${item.variation.id}`
                       : item.product.id;
-                    const displayPrice = item.variation?.price ?? item.product.price;
+                    const displayPrice = cartItemUnitPrice(item);
                     const variations = variationsByProductId[item.product.id] || item.product.variations || [];
 
                     return (

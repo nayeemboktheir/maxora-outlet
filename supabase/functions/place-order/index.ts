@@ -351,6 +351,8 @@ Deno.serve(async (req) => {
         productId: String(i.productId || '').trim(),
         variationId: typeof i.variationId === 'string' ? i.variationId.trim() : undefined,
         color: typeof i.color === 'string' && i.color.trim() ? i.color.trim().slice(0, 50) : null,
+        size: typeof i.size === 'string' && i.size.trim() ? i.size.trim().slice(0, 50) : null,
+        sizeId: typeof i.sizeId === 'string' && i.sizeId.trim() ? i.sizeId.trim() : undefined,
         quantity: Number(i.quantity || 0),
         productName: typeof i.productName === 'string' ? i.productName.trim() : undefined,
         productImage: typeof i.productImage === 'string' ? i.productImage.trim() : null,
@@ -372,6 +374,10 @@ Deno.serve(async (req) => {
     // Fetch products for UUID items & compute totals from DB values (prevents client tampering)
     const productById = new Map<string, { id: string; name: string; price: number; images: string[] | null }>();
     const variationById = new Map<string, { id: string; product_id: string; name: string; price: number }>();
+    const sizeById = new Map<
+      string,
+      { id: string; product_id: string; name: string; price: number | null }
+    >();
 
     if (uuidItems.length > 0) {
       const productIds = Array.from(new Set(uuidItems.map((i) => i.productId)));
@@ -415,6 +421,29 @@ Deno.serve(async (req) => {
           });
         }
       }
+
+      const sizeIds = Array.from(
+        new Set(uuidItems.map((i) => i.sizeId).filter((v): v is string => !!v && uuidRegex.test(v)))
+      );
+
+      if (sizeIds.length > 0) {
+        const { data: sizeRows, error: sizesError } = await supabase
+          .from('product_sizes')
+          .select('id, product_id, name, price')
+          .in('id', sizeIds)
+          .eq('is_active', true);
+
+        if (sizesError) throw sizesError;
+
+        for (const sz of sizeRows ?? []) {
+          sizeById.set(sz.id, {
+            id: sz.id,
+            product_id: sz.product_id,
+            name: sz.name,
+            price: sz.price === null || sz.price === undefined ? null : Number(sz.price),
+          });
+        }
+      }
     }
 
     const isManualOrder = body.orderSource === 'manual';
@@ -427,15 +456,25 @@ Deno.serve(async (req) => {
       if (i.variationId && !v) return null;
       if (v && v.product_id !== p.id) return null;
 
-      // For manual orders, use client-sent price if provided; otherwise use DB price
-      const dbPrice = v ? Number(v.price) : Number(p.price);
+      const sz = i.sizeId ? sizeById.get(i.sizeId) : undefined;
+      if (i.sizeId && !sz) return null;
+      if (sz && sz.product_id !== p.id) return null;
+
+      // Most specific priced axis wins: size, then colour, then the product.
+      // Keep this in step with `resolveVariantPricing` in src/lib/pricing.ts.
+      const dbPrice =
+        sz && sz.price !== null && sz.price > 0
+          ? Number(sz.price)
+          : v
+          ? Number(v.price)
+          : Number(p.price);
       const itemPrice = (isManualOrder && typeof i.price === 'number' && Number.isFinite(i.price) && i.price >= 0)
         ? i.price
         : dbPrice;
 
-      // Size is a label only - price comes from the variation - so sanitising is enough.
-      const sizeName =
-        typeof i.size === 'string' && i.size.trim() ? i.size.trim().slice(0, 50) : null;
+      // Prefer the name the size row actually has; fall back to the sanitised label
+      // for carts placed before sizes carried ids.
+      const sizeName = sz ? sz.name.slice(0, 50) : i.size;
 
       return {
         productId: p.id,

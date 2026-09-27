@@ -1,3 +1,4 @@
+import { cartItemUnitPrice } from '@/lib/pricing';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Plus, Minus, ShoppingBag, ArrowRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
@@ -80,7 +81,7 @@ const CartDrawer = () => {
                 <div className="space-y-4">
                   {items.map((item) => {
                     const itemKey = item.variation?.id ? `${item.product.id}-${item.variation.id}` : item.product.id;
-                    const displayPrice = item.variation?.price ?? item.product.price;
+                    const displayPrice = cartItemUnitPrice(item);
                     
                     return (
                       <motion.div

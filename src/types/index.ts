@@ -7,6 +7,23 @@ export interface ProductVariation {
   stock: number;
   sort_order: number;
   is_active: boolean;
+  image_url?: string | null;
+}
+
+/**
+ * The size axis, which is a full option group in its own right: like a colour
+ * variation it can carry an image, its own price and its own stock. Every
+ * pricing field is optional and a missing one means "inherit" - see
+ * `resolveVariantPricing` in `@/lib/pricing` for the precedence rules.
+ */
+export interface ProductSizeOption {
+  id: string;
+  name: string;
+  price?: number | null;
+  original_price?: number | null;
+  image_url?: string | null;
+  stock?: number;
+  sort_order?: number;
 }
 
 export interface Product {
@@ -53,7 +70,11 @@ export interface CartItem {
   quantity: number;
   variation?: ProductVariation;
   color?: string;
+  /** Size label. Kept as a plain string so carts saved before sizes could be
+   *  priced still deserialise, and because it is what the order row stores. */
   size?: string;
+  /** Full size option, present when the size was picked from a priced axis. */
+  sizeOption?: ProductSizeOption;
 }
 
 export interface User {

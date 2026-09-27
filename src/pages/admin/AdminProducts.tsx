@@ -110,9 +110,15 @@ const initialFormState = {
 
 type ProductSizeRow = {
   id?: string;
-  clientId: string;
+  clientId: string; // local-only stable key for React lists
   name: string;
   sort_order: number;
+  // A size is a full option group, same as a colour: leave price blank to
+  // inherit the colour's (then the product's) price.
+  price?: number;
+  original_price?: number;
+  stock: number;
+  image_url?: string | null;
 };
 
 const comboKey = (variationClientId: string, sizeClientId: string) =>
@@ -231,6 +237,10 @@ export default function AdminProducts() {
       clientId: row.id,
       name: row.name,
       sort_order: row.sort_order || 0,
+      price: row.price ?? undefined,
+      original_price: row.original_price ?? undefined,
+      stock: row.stock ?? 0,
+      image_url: row.image_url ?? null,
     }));
 
     setSizes(loadedSizes);
@@ -411,12 +421,23 @@ export default function AdminProducts() {
   const handleAddSize = () => {
     setSizes((prev) => [
       ...prev,
-      { clientId: crypto.randomUUID(), name: '', sort_order: prev.length + 1 },
+      { clientId: crypto.randomUUID(), name: '', sort_order: prev.length + 1, stock: 0 },
     ]);
   };
 
-  const handleSizeChange = (clientId: string, name: string) => {
-    setSizes((prev) => prev.map((sz) => (sz.clientId === clientId ? { ...sz, name } : sz)));
+  const handleSizeChange = <K extends keyof ProductSizeRow>(
+    clientId: string,
+    field: K,
+    value: ProductSizeRow[K]
+  ) => {
+    setSizes((prev) =>
+      prev.map((sz) => (sz.clientId === clientId ? { ...sz, [field]: value } : sz))
+    );
+  };
+
+  const handleSizeImageUpload = async (clientId: string, file: File) => {
+    const url = await uploadOptionImage(file, 'sizes');
+    if (url) handleSizeChange(clientId, 'image_url', url);
   };
 
   const handleRemoveSize = (clientId: string) => {
@@ -451,26 +472,35 @@ export default function AdminProducts() {
     );
   };
 
-  const handleVariationImageUpload = async (clientId: string, file: File) => {
+  /** Shared by both option axes; returns the public URL, or null if it failed. */
+  const uploadOptionImage = async (
+    file: File,
+    folder: 'variations' | 'sizes'
+  ): Promise<string | null> => {
     if (!file.type.startsWith('image/')) {
       toast.error('শুধু ছবি আপলোড করুন');
-      return;
+      return null;
     }
     if (file.size > 5 * 1024 * 1024) {
       toast.error('ছবিটি বড় (সর্বোচ্চ 5MB)');
-      return;
+      return null;
     }
     const fileExt = file.name.split('.').pop();
-    const fileName = `variations/${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
+    const fileName = `${folder}/${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
     const { error } = await supabase.storage.from('shop-assets').upload(fileName, file);
     if (error) {
-      console.error('Variation image upload error:', error);
+      console.error('Option image upload error:', error);
       toast.error(`ছবি আপলোড হয়নি: ${error.message}`);
-      return;
+      return null;
     }
     const { data: urlData } = supabase.storage.from('shop-assets').getPublicUrl(fileName);
-    handleVariationChange(clientId, 'image_url', urlData.publicUrl);
     toast.success('ছবি আপলোড হয়েছে');
+    return urlData.publicUrl;
+  };
+
+  const handleVariationImageUpload = async (clientId: string, file: File) => {
+    const url = await uploadOptionImage(file, 'variations');
+    if (url) handleVariationChange(clientId, 'image_url', url);
   };
 
   const saveVariations = async (productId: string) => {
@@ -601,18 +631,30 @@ export default function AdminProducts() {
       const normalized = sz.name.trim().toLowerCase();
       const existingId = existingByName.get(normalized);
 
+      // A blank price means "inherit from the colour, then the product", so it
+      // has to go to the DB as NULL rather than 0.
+      const sizeFields = {
+        name: sz.name.trim(),
+        sort_order: idx + 1,
+        price: sz.price && sz.price > 0 ? sz.price : null,
+        original_price:
+          sz.original_price && sz.original_price > 0 ? sz.original_price : null,
+        stock: sz.stock ?? 0,
+        image_url: sz.image_url || null,
+      };
+
       if (existingId) {
         keptIds.add(existingId);
         sizeIdByClientId.set(sz.clientId, existingId);
         const { error } = await supabase
           .from('product_sizes')
-          .update({ name: sz.name.trim(), sort_order: idx + 1 })
+          .update(sizeFields)
           .eq('id', existingId);
         if (error) console.error('Update size error:', error);
       } else {
         const { data, error } = await supabase
           .from('product_sizes')
-          .insert({ product_id: productId, name: sz.name.trim(), sort_order: idx + 1 })
+          .insert({ product_id: productId, ...sizeFields })
           .select('id')
           .single();
         if (error || !data) {
@@ -1228,7 +1270,7 @@ export default function AdminProducts() {
                     <div>
                       <Label className="text-base font-semibold">সাইজ (Size)</Label>
                       <p className="text-xs text-muted-foreground mt-1">
-                        যেমন: M, L, XL — প্রতিটি কালারের জন্য আলাদা স্টক দিতে পারবেন
+                        প্রতিটি সাইজের ছবি, নাম, দাম ও স্টক আলাদাভাবে দিন। দাম খালি রাখলে কালারের দাম প্রযোজ্য হবে
                       </p>
                     </div>
                   </div>
@@ -1247,27 +1289,106 @@ export default function AdminProducts() {
 
                 {hasSizes && (
                   <div className="space-y-3 bg-muted/50 rounded-lg p-4">
-                    <div className="flex flex-wrap gap-2">
-                      {sizes.map((sz) => (
-                        <div key={sz.clientId} className="flex items-center gap-1">
-                          <Input
-                            className="w-28"
-                            placeholder="যেমন: L"
-                            value={sz.name}
-                            onChange={(e) => handleSizeChange(sz.clientId, e.target.value)}
-                          />
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8"
-                            onClick={() => handleRemoveSize(sz.clientId)}
-                          >
-                            <Trash2 className="h-4 w-4 text-destructive" />
-                          </Button>
-                        </div>
-                      ))}
+                    <div className="grid grid-cols-12 gap-2 text-xs font-medium text-muted-foreground mb-2">
+                      <div className="col-span-2">ছবি (Image)</div>
+                      <div className="col-span-3">সাইজের নাম</div>
+                      <div className="col-span-2">দাম (Price) ৳</div>
+                      <div className="col-span-2">আগের দাম</div>
+                      <div className="col-span-2">স্টক</div>
+                      <div className="col-span-1"></div>
                     </div>
+
+                    {sizes.map((sz) => (
+                      <div key={sz.clientId} className="grid grid-cols-12 gap-2 items-center">
+                        <div className="col-span-2 flex items-center gap-2">
+                          <label className="relative cursor-pointer">
+                            <div className="w-12 h-12 rounded border bg-background overflow-hidden flex items-center justify-center">
+                              {sz.image_url ? (
+                                <img src={sz.image_url} alt="" className="w-full h-full object-cover" />
+                              ) : (
+                                <Plus className="h-4 w-4 text-muted-foreground" />
+                              )}
+                            </div>
+                            <input
+                              type="file"
+                              accept="image/*"
+                              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                              onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                if (file) handleSizeImageUpload(sz.clientId, file);
+                                e.target.value = '';
+                              }}
+                            />
+                          </label>
+                          {sz.image_url && (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="h-6 w-6"
+                              onClick={() => handleSizeChange(sz.clientId, 'image_url', null)}
+                            >
+                              <Trash2 className="h-3 w-3 text-destructive" />
+                            </Button>
+                          )}
+                        </div>
+                        <Input
+                          className="col-span-3"
+                          placeholder="যেমন: L"
+                          value={sz.name}
+                          onChange={(e) => handleSizeChange(sz.clientId, 'name', e.target.value)}
+                        />
+                        <Input
+                          className="col-span-2"
+                          type="number"
+                          placeholder="কালারের দাম"
+                          value={sz.price || ''}
+                          onChange={(e) =>
+                            handleSizeChange(
+                              sz.clientId,
+                              'price',
+                              parseFloat(e.target.value) || undefined
+                            )
+                          }
+                        />
+                        <Input
+                          className="col-span-2"
+                          type="number"
+                          placeholder="Optional"
+                          value={sz.original_price || ''}
+                          onChange={(e) =>
+                            handleSizeChange(
+                              sz.clientId,
+                              'original_price',
+                              parseFloat(e.target.value) || undefined
+                            )
+                          }
+                        />
+                        <Input
+                          className="col-span-2"
+                          type="number"
+                          value={sz.stock ?? 0}
+                          disabled={hasVariations && variations.length > 0}
+                          title={
+                            hasVariations && variations.length > 0
+                              ? 'কালার চালু থাকলে স্টক নিচের কালার × সাইজ ছক থেকে আসে'
+                              : undefined
+                          }
+                          onChange={(e) =>
+                            handleSizeChange(sz.clientId, 'stock', parseInt(e.target.value) || 0)
+                          }
+                        />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="col-span-1"
+                          onClick={() => handleRemoveSize(sz.clientId)}
+                        >
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
+                      </div>
+                    ))}
 
                     <Button type="button" variant="outline" size="sm" onClick={handleAddSize}>
                       <Plus className="h-4 w-4 mr-1" />

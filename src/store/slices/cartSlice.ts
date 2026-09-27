@@ -1,5 +1,6 @@
 import { createSlice, PayloadAction } from '@reduxjs/toolkit';
-import { CartItem, Product, ProductVariation } from '@/types';
+import { CartItem, Product, ProductSizeOption, ProductVariation } from '@/types';
+import { cartItemUnitPrice } from '@/lib/pricing';
 
 interface CartState {
   items: CartItem[];
@@ -41,9 +42,16 @@ const cartSlice = createSlice({
   reducers: {
     addToCart: (
       state,
-      action: PayloadAction<{ product: Product; quantity?: number; variation?: ProductVariation; color?: string; size?: string }>
+      action: PayloadAction<{
+        product: Product;
+        quantity?: number;
+        variation?: ProductVariation;
+        color?: string;
+        size?: string;
+        sizeOption?: ProductSizeOption;
+      }>
     ) => {
-      const { product, quantity = 1, variation, color, size } = action.payload;
+      const { product, quantity = 1, variation, color, size, sizeOption } = action.payload;
       const itemKey = getCartItemKey(product.id, variation?.id, color, size);
 
       const existingItem = state.items.find(
@@ -53,7 +61,7 @@ const cartSlice = createSlice({
       if (existingItem) {
         existingItem.quantity += quantity;
       } else {
-        state.items.push({ product, quantity, variation, color, size });
+        state.items.push({ product, quantity, variation, color, size, sizeOption });
       }
       saveCartToStorage(state.items);
     },
@@ -156,8 +164,7 @@ export const {
 export const selectCartItems = (state: { cart: CartState }) => state.cart.items;
 export const selectCartTotal = (state: { cart: CartState }) =>
   state.cart.items.reduce((total, item) => {
-    const price = item.variation?.price ?? item.product.price;
-    return total + price * item.quantity;
+    return total + cartItemUnitPrice(item) * item.quantity;
   }, 0);
 export const selectCartCount = (state: { cart: CartState }) =>
   state.cart.items.reduce((count, item) => count + item.quantity, 0);
