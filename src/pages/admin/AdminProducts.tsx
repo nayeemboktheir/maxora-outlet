@@ -37,7 +37,7 @@ import { Calendar } from '@/components/ui/calendar';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
-import { Plus, Pencil, Trash2, Search, Package, Upload, X, Image as ImageIcon, Loader2, Play, CalendarIcon, Copy, Ruler, ArrowDownToLine } from 'lucide-react';
+import { Plus, Pencil, Trash2, Search, Package, Upload, X, Image as ImageIcon, Loader2, Play, CalendarIcon, Copy, Ruler, ArrowDownToLine, Calculator } from 'lucide-react';
 import { 
   getAllProducts, 
   createProduct, 
@@ -172,10 +172,15 @@ export default function AdminProducts() {
   };
 
   const loadProductVariations = async (productId: string) => {
+    // Retired rows (see `retireVariations`) are kept only so past orders can
+    // still resolve their name. Loading them back would refill the colour group
+    // with options the storefront no longer offers, so the editor skips them -
+    // matching what the storefront itself queries.
     const { data, error } = await supabase
       .from('product_variations')
       .select('*')
       .eq('product_id', productId)
+      .eq('is_active', true)
       .order('sort_order');
 
     if (error) {
@@ -488,6 +493,45 @@ export default function AdminProducts() {
     });
   };
 
+  /**
+   * Fill the (colour, size) grid from the stock already typed on each axis.
+   *
+   * A cell is capped by whichever axis is scarcer, so a colour with 20 pieces
+   * never claims 100 in every size. Cells that already hold a number are left
+   * alone - 0 is the "not set yet" state here, so clearing a cell re-derives it
+   * on the next run and deliberate figures survive.
+   */
+  const handleAutoFillComboStock = () => {
+    const namedSizes = sizes.filter((sz) => sz.name.trim());
+    const namedVariations = variations.filter((v) => v.name.trim());
+
+    if (namedSizes.length === 0 || namedVariations.length === 0) return;
+
+    const next = { ...comboStock };
+    let filled = 0;
+
+    for (const variation of namedVariations) {
+      for (const sz of namedSizes) {
+        const key = comboKey(variation.clientId, sz.clientId);
+        if ((next[key] ?? 0) > 0) continue;
+
+        const available = [variation.stock, sz.stock ?? 0].filter((n) => n > 0);
+        if (available.length === 0) continue;
+
+        next[key] = Math.min(...available);
+        filled++;
+      }
+    }
+
+    if (filled === 0) {
+      toast.error('হিসাব করার মতো স্টক পাওয়া যায়নি');
+      return;
+    }
+
+    setComboStock(next);
+    toast.success(`${filled}টি ঘরে স্টক বসানো হয়েছে`);
+  };
+
   const handleComboStockChange = (
     variationClientId: string,
     sizeClientId: string,
@@ -751,7 +795,9 @@ export default function AdminProducts() {
     const { data: savedVariations } = await supabase
       .from('product_variations')
       .select('id, name')
-      .eq('product_id', productId);
+      .eq('product_id', productId)
+      // Combo stock only ever covers colours the storefront can actually offer.
+      .eq('is_active', true);
 
     const variationIdByName = new Map(
       (savedVariations || []).map((v) => [v.name.trim().toLowerCase(), v.id])
@@ -1459,10 +1505,9 @@ export default function AdminProducts() {
                           className="col-span-2"
                           type="number"
                           value={sz.stock ?? 0}
-                          disabled={hasVariations && variations.length > 0}
                           title={
                             hasVariations && variations.length > 0
-                              ? 'কালার চালু থাকলে স্টক নিচের কালার × সাইজ ছক থেকে আসে'
+                              ? 'কালার চালু থাকলে বিক্রি হয় নিচের ছক অনুযায়ী; এই সংখ্যাটি অটো হিসাবের ভিত্তি'
                               : undefined
                           }
                           onChange={(e) =>
@@ -1496,12 +1541,26 @@ export default function AdminProducts() {
                   live inside the size panel, so it still needs that panel's guard. */}
               {hasSizes && hasVariations && variations.length > 0 && sizes.some((sz) => sz.name.trim()) && (
                 <div className="pt-4 border-t mt-4">
-                  <Label className="text-sm font-semibold">
-                    স্টক (কালার × সাইজ)
-                  </Label>
-                  <p className="text-xs text-muted-foreground mt-1 mb-3">
-                    যে ঘরে 0 দিবেন, সেই কম্বিনেশন কাস্টমার কিনতে পারবে না
-                  </p>
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <Label className="text-sm font-semibold">
+                        স্টক (কালার × সাইজ)
+                      </Label>
+                      <p className="text-xs text-muted-foreground mt-1 mb-3">
+                        যে ঘরে 0 দিবেন, সেই কম্বিনেশন কাস্টমার কিনতে পারবে না
+                      </p>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={handleAutoFillComboStock}
+                      className="shrink-0"
+                    >
+                      <Calculator className="h-4 w-4 mr-1" />
+                      স্টক অটো হিসাব করুন
+                    </Button>
+                  </div>
                   <div className="overflow-x-auto">
                     <table className="text-sm border-separate border-spacing-1">
                       <thead>
