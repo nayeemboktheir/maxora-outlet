@@ -28,3 +28,4 @@ migration-private/
 *.sw?
 .claude
 .agents
+*.zip
