@@ -31,6 +31,9 @@ import {
   SHIPPING_RATES,
 } from "@/components/checkout/ShippingMethodSelector";
 import { toast } from "sonner";
+import { resolveVariantPricing } from "@/lib/pricing";
+import type { ProductSizeOption } from "@/types";
+import { swatchColor } from "@/lib/colorSwatch";
 
 // ====== Interfaces ======
 interface ProductVariation {
@@ -39,6 +42,7 @@ interface ProductVariation {
   price: number;
   original_price?: number;
   stock: number;
+  image_url?: string | null;
 }
 
 interface ProductData {
@@ -53,6 +57,9 @@ interface ProductData {
   long_description?: string;
   variations: ProductVariation[];
   colors?: string[];
+  sizes: ProductSizeOption[];
+  /** Stock per `${variationId}|${sizeId}`, only used when both axes exist. */
+  comboStock: Record<string, number>;
 }
 
 interface OrderForm {
@@ -60,13 +67,154 @@ interface OrderForm {
   phone: string;
   address: string;
   quantity: number;
-  selectedVariationId: string;
-  selectedColor?: string;
   shippingZone?: ShippingZone;
   subtotal?: number;
   shippingCost?: number;
   total?: number;
 }
+
+// ====== Size / Colour options ======
+interface SizeChoice {
+  key: string;
+  label: string;
+  /** Own price, shown under the label when the size sets one. */
+  price?: number;
+  sizeId?: string;
+  variationId?: string;
+}
+
+interface ColorChoice {
+  key: string;
+  label: string;
+  image?: string | null;
+  variationId?: string;
+}
+
+/**
+ * Products come in two shapes, and the landing page has to read both:
+ *
+ * - Two-axis products keep sizes in `product_sizes` and colours in
+ *   `product_variations` (what Admin → Products edits today).
+ * - Older products kept their sizes in `product_variations` and any colours as
+ *   plain strings on `products.colors`.
+ */
+const useProductOptions = (product?: ProductData) => {
+  const [sizeKey, setSizeKey] = useState("");
+  const [colorKey, setColorKey] = useState("");
+
+  const hasSizeRows = (product?.sizes.length ?? 0) > 0;
+  const hasColorVariations = hasSizeRows && (product?.variations.length ?? 0) > 0;
+
+  const { sizes, colors } = useMemo((): { sizes: SizeChoice[]; colors: ColorChoice[] } => {
+    if (!product) return { sizes: [], colors: [] };
+
+    const legacyColors: ColorChoice[] = (product.colors || [])
+      .filter((c) => typeof c === "string" && c.trim())
+      .map((c) => ({ key: `color:${c}`, label: c }));
+
+    if (hasSizeRows) {
+      return {
+        sizes: product.sizes.map((sz) => ({
+          key: sz.id,
+          label: sz.name,
+          price: sz.price ?? undefined,
+          sizeId: sz.id,
+        })),
+        colors: product.variations.length
+          ? product.variations.map((v) => ({
+              key: v.id,
+              label: v.name,
+              image: v.image_url,
+              variationId: v.id,
+            }))
+          : legacyColors,
+      };
+    }
+
+    const seen = new Set<string>();
+    const legacySizes: SizeChoice[] = [];
+    for (const v of product.variations) {
+      const name = String(v.name || "").trim();
+      if (!name || seen.has(name.toLowerCase())) continue;
+      seen.add(name.toLowerCase());
+      legacySizes.push({ key: v.id, label: name, price: v.price, variationId: v.id });
+    }
+    return { sizes: legacySizes, colors: legacyColors };
+  }, [product, hasSizeRows]);
+
+  const combo = useCallback(
+    (variationId?: string, sizeId?: string) =>
+      variationId && sizeId ? product?.comboStock[`${variationId}|${sizeId}`] ?? 0 : 0,
+    [product]
+  );
+
+  const selectedSize = sizes.find((s) => s.key === sizeKey);
+  const selectedColor = colors.find((c) => c.key === colorKey);
+
+  // Same availability rules as the product page: with both axes the (colour,
+  // size) cell decides; size-only products keep stock on the size row; legacy
+  // variation-sizes were never stock-gated here, so they stay open.
+  const isSizeSoldOut = useCallback(
+    (size: SizeChoice) => {
+      if (!product || !size.sizeId) return false;
+      if (hasColorVariations) {
+        return selectedColor?.variationId
+          ? combo(selectedColor.variationId, size.sizeId) <= 0
+          : !product.variations.some((v) => combo(v.id, size.sizeId) > 0);
+      }
+      const row = product.sizes.find((sz) => sz.id === size.sizeId);
+      return (row?.stock ?? 0) <= 0;
+    },
+    [product, hasColorVariations, selectedColor, combo]
+  );
+
+  const isColorSoldOut = useCallback(
+    (color: ColorChoice) => {
+      if (!product || !hasColorVariations || !color.variationId) return false;
+      return selectedSize?.sizeId
+        ? combo(color.variationId, selectedSize.sizeId) <= 0
+        : !product.sizes.some((sz) => combo(color.variationId, sz.id) > 0);
+    },
+    [product, hasColorVariations, selectedSize, combo]
+  );
+
+  const variationId = selectedColor?.variationId ?? selectedSize?.variationId;
+  const pricing = product
+    ? resolveVariantPricing(
+        { price: product.price, originalPrice: product.original_price },
+        product.variations.find((v) => v.id === variationId),
+        product.sizes.find((sz) => sz.id === selectedSize?.sizeId)
+      )
+    : { price: 0 };
+
+  return {
+    sizes,
+    colors,
+    selectedSize,
+    selectedColor,
+    selectSize: setSizeKey,
+    selectColor: setColorKey,
+    isSizeSoldOut,
+    isColorSoldOut,
+    unitPrice: pricing.price,
+    variationId,
+  };
+};
+
+type ProductOptions = ReturnType<typeof useProductOptions>;
+
+const ColorSwatch = ({ color, className = "" }: { color: ColorChoice; className?: string }) => {
+  const hex = swatchColor(color.label);
+  if (color.image) {
+    return <img src={color.image} alt="" loading="lazy" className={`object-cover ${className}`} />;
+  }
+  if (hex) return <span className={`block ${className}`} style={{ backgroundColor: hex }} />;
+  return (
+    <span className={`flex items-center justify-center bg-gradient-to-br from-primary/20 to-accent/20 text-foreground font-bold ${className}`}>
+      {color.label.charAt(0).toUpperCase()}
+    </span>
+  );
+};
 
 // ====== Optimized Image ======
 const OptimizedImage = memo(({ src, alt, className, priority = false }: { 
@@ -459,54 +607,39 @@ const DeliverySection = memo(() => (
 DeliverySection.displayName = 'DeliverySection';
 
 // ====== Checkout Form ======
-const CheckoutSection = memo(({ product, onSubmit, isSubmitting }: { 
-  product: ProductData; onSubmit: (form: OrderForm) => void; isSubmitting: boolean;
+const CheckoutSection = memo(({ product, options, onSubmit, isSubmitting }: {
+  product: ProductData; options: ProductOptions; onSubmit: (form: OrderForm) => void; isSubmitting: boolean;
 }) => {
   const [form, setForm] = useState<OrderForm>({
-    name: "", phone: "", address: "", quantity: 1, selectedVariationId: "", selectedColor: "",
+    name: "", phone: "", address: "", quantity: 1,
   });
   const [shippingZone, setShippingZone] = useState<ShippingZone>('outside_dhaka');
   const formRef = useRef<HTMLFormElement>(null);
   const sizeSelectionRef = useRef<HTMLDivElement>(null);
-  const colorSelectionRef = useRef<HTMLDivElement>(null);
-  const colors = useMemo(
-    () => (product.colors || []).filter((c) => typeof c === 'string' && c.trim()),
-    [product.colors]
-  );
+  const colorSelectionRef = useRef<HTMLElement>(null);
+  const {
+    sizes, colors, selectedSize, selectedColor, selectSize, selectColor,
+    isSizeSoldOut, isColorSoldOut, unitPrice,
+  } = options;
 
-  const variations = useMemo(() => {
-    const seen = new Set<string>();
-    const out: ProductVariation[] = [];
-    for (const v of product.variations || []) {
-      const key = String(v.name || '').trim().toLowerCase();
-      if (!key) continue;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      out.push(v);
-    }
-    return out;
-  }, [product.variations]);
-
-  const selectedVariation = useMemo(
-    () => variations.find(v => v.id === form.selectedVariationId),
-    [variations, form.selectedVariationId]
-  );
-
-  const unitPrice = selectedVariation?.price || product.price;
   const subtotal = unitPrice * form.quantity;
   const shippingCost = SHIPPING_RATES[shippingZone];
   const total = subtotal + shippingCost;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (variations.length > 0 && !form.selectedVariationId) {
+    if (sizes.length > 0 && !selectedSize) {
       toast.error("সাইজ সিলেক্ট করুন");
       sizeSelectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
       return;
     }
-    if (colors.length > 0 && !form.selectedColor) {
+    if (colors.length > 0 && !selectedColor) {
       toast.error("কালার সিলেক্ট করুন");
       colorSelectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
+    }
+    if ((selectedSize && isSizeSoldOut(selectedSize)) || (selectedColor && isColorSoldOut(selectedColor))) {
+      toast.error("এই কম্বিনেশন স্টকে নেই");
       return;
     }
     if (!form.name.trim() || !form.phone.trim() || !form.address.trim()) {
@@ -527,13 +660,77 @@ const CheckoutSection = memo(({ product, onSubmit, isSubmitting }: {
   return (
     <section id="checkout" className="py-8 md:py-12 bg-gradient-to-b from-secondary/40 to-background">
       <div className="container mx-auto px-4">
-        <div className="max-w-lg mx-auto">
-          <div className="text-center mb-6">
-            <h2 className="text-2xl md:text-3xl font-bold text-foreground">অর্ডার করুন</h2>
-            <p className="text-muted-foreground text-sm mt-1">পণ্য হাতে পেয়ে মূল্য পরিশোধ করুন</p>
-          </div>
+        <div className="text-center mb-6">
+          <h2 className="text-2xl md:text-3xl font-bold text-foreground">অর্ডার করুন</h2>
+          <p className="text-muted-foreground text-sm mt-1">পণ্য হাতে পেয়ে মূল্য পরিশোধ করুন</p>
+        </div>
 
-          <form ref={formRef} onSubmit={handleSubmit} className="space-y-4">
+        {/* Form on the left, colour panel on the right (above the form on mobile). */}
+        <div
+          className={`max-w-lg mx-auto ${
+            colors.length > 0 ? 'lg:max-w-none lg:grid lg:grid-cols-[32rem_24rem] lg:justify-center lg:items-start lg:gap-6' : ''
+          }`}
+        >
+          {colors.length > 0 && (
+            <aside ref={colorSelectionRef} className="mb-4 lg:mb-0 lg:col-start-2 lg:row-start-1 lg:sticky lg:top-4">
+              <div className="bg-card rounded-xl shadow-lg overflow-hidden border border-border">
+                <div className="bg-gradient-to-r from-primary to-accent text-primary-foreground py-3 px-4 font-bold flex items-center gap-2">
+                  <span aria-hidden>🎨</span>
+                  কালার নির্বাচন করুন <span className="text-primary-foreground/80">*</span>
+                </div>
+
+                <div className="p-4">
+                  <div className="grid grid-cols-4 gap-3">
+                    {colors.map((c) => {
+                      const soldOut = isColorSoldOut(c);
+                      const active = selectedColor?.key === c.key;
+                      return (
+                        <button
+                          key={c.key}
+                          type="button"
+                          disabled={soldOut}
+                          onClick={() => selectColor(c.key)}
+                          aria-pressed={active}
+                          title={c.label}
+                          className={`group flex flex-col items-center gap-1.5 rounded-lg p-1.5 transition-colors ${
+                            active ? 'bg-primary/10' : 'hover:bg-secondary/60'
+                          } ${soldOut ? 'opacity-50 cursor-not-allowed' : ''}`}
+                        >
+                          <span
+                            className={`relative block rounded-full p-0.5 transition-all ${
+                              active ? 'ring-2 ring-primary' : 'ring-1 ring-border group-hover:ring-primary/50'
+                            }`}
+                          >
+                            <ColorSwatch color={c} className="w-11 h-11 rounded-full ring-1 ring-black/10" />
+                            {active && (
+                              <CheckCircle2 className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-background text-primary" />
+                            )}
+                          </span>
+                          <span className={`text-xs leading-tight text-center line-clamp-2 ${
+                            active ? 'text-primary font-bold' : 'text-foreground font-medium'
+                          } ${soldOut ? 'line-through' : ''}`}>
+                            {c.label}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <div className="mt-4 pt-3 border-t border-border text-sm text-center">
+                    {selectedColor ? (
+                      <span className="text-foreground">
+                        নির্বাচিত কালার: <span className="font-bold text-primary">{selectedColor.label}</span>
+                      </span>
+                    ) : (
+                      <span className="text-destructive text-xs">* কালার সিলেক্ট করুন</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </aside>
+          )}
+
+          <form ref={formRef} onSubmit={handleSubmit} className="space-y-4 lg:col-start-1 lg:row-start-1">
             {/* Product Card */}
             <div className="bg-card rounded-xl shadow-lg overflow-hidden border border-border">
               <div className="bg-gradient-to-r from-primary to-accent text-primary-foreground py-3 px-4 font-bold flex items-center gap-2">
@@ -553,53 +750,28 @@ const CheckoutSection = memo(({ product, onSubmit, isSubmitting }: {
                   </div>
                 </div>
 
-                {/* Color Selection */}
-                {colors.length > 0 && (
-                  <div ref={colorSelectionRef} className="mb-4">
-                    <p className="text-sm font-medium text-foreground mb-2">কালার নির্বাচন করুন <span className="text-destructive">*</span></p>
-                    <div className="flex flex-wrap gap-2">
-                      {colors.map((c) => (
-                        <button
-                          key={c}
-                          type="button"
-                          onClick={() => updateForm('selectedColor', c)}
-                          className={`px-4 py-2.5 rounded-lg font-semibold transition-all border-2 ${
-                            form.selectedColor === c
-                              ? 'border-primary bg-primary text-primary-foreground shadow-md'
-                              : 'border-border bg-secondary/50 text-foreground hover:border-primary/50'
-                          }`}
-                        >
-                          {c}
-                        </button>
-                      ))}
-                    </div>
-                    {!form.selectedColor && (
-                      <p className="text-xs text-destructive mt-1">* কালার সিলেক্ট করুন</p>
-                    )}
-                  </div>
-                )}
-
                 {/* Size Selection */}
-                {variations.length > 0 && (
+                {sizes.length > 0 && (
                   <div ref={sizeSelectionRef} className="mb-4">
                     <p className="text-sm font-medium text-foreground mb-2">সাইজ নির্বাচন করুন <span className="text-destructive">*</span></p>
                     <div className="flex flex-wrap gap-2">
-                      {variations.map((v) => (
+                      {sizes.map((s) => (
                         <button
-                          key={v.id}
+                          key={s.key}
                           type="button"
-                          onClick={() => updateForm('selectedVariationId', v.id)}
-                          className={`px-4 py-2.5 rounded-lg font-semibold transition-all border-2 ${
-                            form.selectedVariationId === v.id
+                          disabled={isSizeSoldOut(s)}
+                          onClick={() => selectSize(s.key)}
+                          className={`px-4 py-2.5 rounded-lg font-semibold transition-all border-2 disabled:opacity-50 disabled:line-through disabled:cursor-not-allowed ${
+                            selectedSize?.key === s.key
                               ? 'border-primary bg-primary text-primary-foreground shadow-md'
                               : 'border-border bg-secondary/50 text-foreground hover:border-primary/50'
                           }`}
                         >
-                          {v.name}
+                          {s.label}
                         </button>
                       ))}
                     </div>
-                    {!form.selectedVariationId && (
+                    {!selectedSize && (
                       <p className="text-xs text-destructive mt-1">* সাইজ সিলেক্ট করুন</p>
                     )}
                   </div>
@@ -771,35 +943,55 @@ const ProductLandingPage = () => {
         .single();
 
       const productId = landingPage?.product_ids?.[0];
-      
+
+      const loadOptions = async (id: string) => {
+        const [{ data: variations }, { data: sizes }] = await Promise.all([
+          supabase
+            .from("product_variations")
+            .select("*")
+            .eq("product_id", id)
+            .eq("is_active", true)
+            .order("sort_order"),
+          supabase
+            .from("product_sizes")
+            .select("id, name, price, original_price, image_url, stock, sort_order")
+            .eq("product_id", id)
+            .eq("is_active", true)
+            .order("sort_order"),
+        ]);
+
+        const comboStock: Record<string, number> = {};
+        if (sizes?.length) {
+          const { data: stockRows } = await supabase
+            .from("product_variation_stock")
+            .select("variation_id, size_id, stock")
+            .in("size_id", sizes.map((sz) => sz.id));
+          for (const row of stockRows || []) {
+            comboStock[`${row.variation_id}|${row.size_id}`] = row.stock ?? 0;
+          }
+        }
+
+        return { variations: variations || [], sizes: sizes || [], comboStock };
+      };
+
       if (productId) {
         const { data: productData } = await supabase.from("products").select("*, long_description").eq("id", productId).single();
         if (productData) {
-          const { data: variations } = await supabase
-            .from("product_variations")
-            .select("*")
-            .eq("product_id", productId)
-            .eq("is_active", true)
-            .order("sort_order");
-          return { ...productData, images: productData.images || [], variations: variations || [], long_description: productData.long_description } as ProductData;
+          return { ...productData, images: productData.images || [], ...(await loadOptions(productId)) } as ProductData;
         }
       }
 
       const { data: directProduct } = await supabase.from("products").select("*, long_description").eq("slug", slug).single();
       if (directProduct) {
-        const { data: variations } = await supabase
-          .from("product_variations")
-          .select("*")
-          .eq("product_id", directProduct.id)
-          .eq("is_active", true)
-          .order("sort_order");
-        return { ...directProduct, images: directProduct.images || [], variations: variations || [], long_description: directProduct.long_description } as ProductData;
+        return { ...directProduct, images: directProduct.images || [], ...(await loadOptions(directProduct.id)) } as ProductData;
       }
 
       throw new Error("Product not found");
     },
     staleTime: 5 * 60 * 1000,
   });
+
+  const options = useProductOptions(product);
 
   const scrollToCheckout = useCallback(() => {
     document.getElementById("checkout")?.scrollIntoView({ behavior: "smooth" });
@@ -808,12 +1000,21 @@ const ProductLandingPage = () => {
   const handleOrderSubmit = async (form: OrderForm) => {
     if (!product) return;
     setIsSubmitting(true);
-    
+    const { selectedSize, selectedColor, variationId } = options;
+
     try {
       const { data, error } = await supabase.functions.invoke('place-order', {
         body: {
           userId: null,
-          items: [{ productId: product.id, variationId: form.selectedVariationId || null, color: form.selectedColor || null, quantity: form.quantity }],
+          items: [{
+            productId: product.id,
+            variationId: variationId || null,
+            sizeId: selectedSize?.sizeId || null,
+            size: selectedSize?.sizeId ? selectedSize.label : null,
+            // A colour backed by a variation is already recorded via variationId.
+            color: selectedColor && !selectedColor.variationId ? selectedColor.label : null,
+            quantity: form.quantity,
+          }],
           shipping: { name: form.name, phone: form.phone, address: form.address },
           shippingZone: form.shippingZone,
           orderSource: 'landing_page',
@@ -879,7 +1080,7 @@ const ProductLandingPage = () => {
       <VideoSection videoUrl={product.video_url} />
       <DeliverySection />
       <div ref={checkoutRef}>
-        <CheckoutSection product={product} onSubmit={handleOrderSubmit} isSubmitting={isSubmitting} />
+        <CheckoutSection product={product} options={options} onSubmit={handleOrderSubmit} isSubmitting={isSubmitting} />
       </div>
       
       {/* Floating CTA */}

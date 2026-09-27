@@ -48,7 +48,9 @@ import {
 import { supabase } from '@/integrations/supabase/client';
 import { format, startOfDay, endOfDay, isWithinInterval } from 'date-fns';
 import { cn } from '@/lib/utils';
+import { swatchColor } from '@/lib/colorSwatch';
 import { DateRange } from 'react-day-picker';
+import { useSearchParams } from 'react-router-dom';
 
 interface ProductVariation {
   id?: string;
@@ -129,9 +131,27 @@ export default function AdminProducts() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [searchParams, setSearchParams] = useSearchParams();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [formData, setFormData] = useState(initialFormState);
+  const [newColor, setNewColor] = useState('');
+
+  // `formData.colors` stays a comma-joined string (that is how it is loaded and
+  // saved); these helpers expose it as a list for the colour editor.
+  const colorList = formData.colors.split(',').map((c) => c.trim()).filter(Boolean);
+  const setColorList = (list: string[]) =>
+    setFormData((prev) => ({ ...prev, colors: list.join(', ') }));
+  const handleAddColor = () => {
+    const name = newColor.trim().replace(/,/g, ' ');
+    if (!name) return;
+    if (colorList.some((c) => c.toLowerCase() === name.toLowerCase())) {
+      toast.error('এই কালারটি আগেই যোগ করা হয়েছে');
+      return;
+    }
+    setColorList([...colorList, name]);
+    setNewColor('');
+  };
   const [submitting, setSubmitting] = useState(false);
   
   // Date filter state
@@ -330,6 +350,24 @@ export default function AdminProducts() {
     setIsDialogOpen(true);
   };
 
+  // `?edit=<productId>` (linked from the Landing Pages screen) opens that
+  // product's editor directly, then drops the param so a refresh doesn't reopen it.
+  useEffect(() => {
+    const editId = searchParams.get('edit');
+    if (!editId || loading) return;
+    const product = products.find((p) => p.id === editId);
+    if (product) {
+      openEditDialog(product);
+    } else {
+      toast.error('Product not found');
+    }
+    setSearchParams((prev) => {
+      prev.delete('edit');
+      return prev;
+    }, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams, loading, products]);
+
   // Image upload handler
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -428,6 +466,24 @@ export default function AdminProducts() {
       ...prev,
       { clientId: crypto.randomUUID(), name: '', sort_order: prev.length + 1, stock: 0 },
     ]);
+  };
+
+  // One-click S/M/L/XL: keeps whatever is already named, drops blank rows and
+  // appends only the standard sizes that are missing.
+  const handleAddStandardSizes = () => {
+    setSizes((prev) => {
+      const kept = prev.filter((sz) => sz.name.trim());
+      const existing = new Set(kept.map((sz) => sz.name.trim().toLowerCase()));
+      const added = ['S', 'M', 'L', 'XL']
+        .filter((name) => !existing.has(name.toLowerCase()))
+        .map((name, idx) => ({
+          clientId: crypto.randomUUID(),
+          name,
+          sort_order: kept.length + idx + 1,
+          stock: 0,
+        }));
+      return [...kept, ...added];
+    });
   };
 
   const handleSizeChange = <K extends keyof ProductSizeRow>(
@@ -849,9 +905,9 @@ export default function AdminProducts() {
         images: productImages.length > 0 ? productImages : [],
         video_url: formData.video_url || null,
         tags: formData.tags ? formData.tags.split(',').map(s => s.trim()) : [],
-        colors: hasVariations
-          ? []
-          : formData.colors.split(',').map((color) => color.trim()).filter(Boolean),
+        // Kept even when variations exist: older products store sizes as
+        // variations and still need this list for their landing-page colours.
+        colors: formData.colors.split(',').map((color) => color.trim()).filter(Boolean),
         is_featured: formData.is_featured,
         is_new: formData.is_new,
         is_active: formData.is_active,
@@ -1243,6 +1299,63 @@ export default function AdminProducts() {
               {/* The two option axes sit side by side once there is room for
                   two 5-column rows; below xl they stack as before. */}
               <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 items-start">
+              {/* Simple colour list: the landing page (/step) colour panel reads this */}
+              <div className="border-t pt-4 mt-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="text-lg" aria-hidden>🎨</span>
+                  <div>
+                    <Label className="text-base font-semibold">কালার লিস্ট (ল্যান্ডিং পেজ)</Label>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      এখানে যোগ করা কালারগুলো ল্যান্ডিং পেজের (/step) অর্ডার ফর্মের পাশে দেখাবে। কাস্টমারকে একটি কালার সিলেক্ট করতে হবে
+                    </p>
+                  </div>
+                </div>
+
+                {colorList.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mb-3">
+                    {colorList.map((color) => (
+                      <span
+                        key={color}
+                        className="inline-flex items-center gap-2 rounded-full border bg-secondary/40 pl-1.5 pr-1 py-1 text-sm"
+                      >
+                        <span
+                          className="h-5 w-5 rounded-full ring-1 ring-black/10 bg-gradient-to-br from-muted to-muted-foreground/30"
+                          style={swatchColor(color) ? { background: swatchColor(color) } : undefined}
+                        />
+                        {color}
+                        <button
+                          type="button"
+                          onClick={() => setColorList(colorList.filter((c) => c !== color))}
+                          className="rounded-full p-0.5 hover:bg-destructive/10"
+                          aria-label={`Remove ${color}`}
+                        >
+                          <X className="h-3.5 w-3.5 text-destructive" />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+
+                <div className="flex gap-2">
+                  <Input
+                    value={newColor}
+                    onChange={(e) => setNewColor(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleAddColor();
+                      }
+                    }}
+                    placeholder="যেমন: Black, Navy Blue, মেরুন"
+                    className="max-w-xs"
+                  />
+                  <Button type="button" variant="outline" size="sm" className="h-10" onClick={handleAddColor}>
+                    <Plus className="h-4 w-4 mr-1" />
+                    কালার যোগ করুন
+                  </Button>
+                </div>
+              </div>
+
               {/* Image-based color / product options */}
               <div className="border-t pt-4 mt-4">
                 <div className="flex items-center justify-between mb-4">
@@ -1250,7 +1363,7 @@ export default function AdminProducts() {
                     <Package className="h-5 w-5 text-primary" />
                     <div>
                       <Label className="text-base font-semibold">কালার / প্রোডাক্ট অপশন</Label>
-                      <p className="text-xs text-muted-foreground mt-1">প্রতিটি কালারের ছবি, নাম, দাম ও স্টক আলাদাভাবে দিন</p>
+                      <p className="text-xs text-muted-foreground mt-1">প্রতিটি কালারের ছবি, নাম, দাম ও স্টক আলাদাভাবে দিন। ল্যান্ডিং পেজের (/step) কালার সেকশনেও এগুলো দেখাবে</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
@@ -1407,7 +1520,7 @@ export default function AdminProducts() {
                     <div>
                       <Label className="text-base font-semibold">সাইজ (Size)</Label>
                       <p className="text-xs text-muted-foreground mt-1">
-                        প্রতিটি সাইজের ছবি, নাম, দাম ও স্টক আলাদাভাবে দিন। দাম খালি রাখলে কালারের দাম প্রযোজ্য হবে
+                        প্রতিটি সাইজের ছবি, নাম, দাম ও স্টক আলাদাভাবে দিন। দাম খালি রাখলে কালারের দাম প্রযোজ্য হবে। ল্যান্ডিং পেজের (/step) সাইজ সেকশনেও এগুলো দেখাবে
                       </p>
                     </div>
                   </div>
@@ -1526,10 +1639,16 @@ export default function AdminProducts() {
                       </div>
                     ))}
 
-                    <Button type="button" variant="outline" size="sm" onClick={handleAddSize}>
-                      <Plus className="h-4 w-4 mr-1" />
-                      আরেকটি সাইজ যোগ করুন
-                    </Button>
+                    <div className="flex flex-wrap gap-2">
+                      <Button type="button" variant="outline" size="sm" onClick={handleAddSize}>
+                        <Plus className="h-4 w-4 mr-1" />
+                        আরেকটি সাইজ যোগ করুন
+                      </Button>
+                      <Button type="button" variant="secondary" size="sm" onClick={handleAddStandardSizes}>
+                        <Ruler className="h-4 w-4 mr-1" />
+                        S, M, L, XL যোগ করুন
+                      </Button>
+                    </div>
 
                   </div>
                 )}

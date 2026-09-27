@@ -624,6 +624,12 @@ const AdminLandingPages = () => {
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-2">
+                          <Button variant="outline" size="sm" asChild>
+                            <Link to={`/admin/products?edit=${product.id}`}>
+                              <Edit className="h-4 w-4 mr-1" />
+                              Edit
+                            </Link>
+                          </Button>
                           <Button
                             variant="outline"
                             size="sm"
