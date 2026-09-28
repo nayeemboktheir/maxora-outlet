@@ -48,7 +48,6 @@ import {
 import { supabase } from '@/integrations/supabase/client';
 import { format, startOfDay, endOfDay, isWithinInterval } from 'date-fns';
 import { cn } from '@/lib/utils';
-import { swatchColor } from '@/lib/colorSwatch';
 import { DateRange } from 'react-day-picker';
 import { useSearchParams } from 'react-router-dom';
 
@@ -135,23 +134,6 @@ export default function AdminProducts() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [formData, setFormData] = useState(initialFormState);
-  const [newColor, setNewColor] = useState('');
-
-  // `formData.colors` stays a comma-joined string (that is how it is loaded and
-  // saved); these helpers expose it as a list for the colour editor.
-  const colorList = formData.colors.split(',').map((c) => c.trim()).filter(Boolean);
-  const setColorList = (list: string[]) =>
-    setFormData((prev) => ({ ...prev, colors: list.join(', ') }));
-  const handleAddColor = () => {
-    const name = newColor.trim().replace(/,/g, ' ');
-    if (!name) return;
-    if (colorList.some((c) => c.toLowerCase() === name.toLowerCase())) {
-      toast.error('এই কালারটি আগেই যোগ করা হয়েছে');
-      return;
-    }
-    setColorList([...colorList, name]);
-    setNewColor('');
-  };
   const [submitting, setSubmitting] = useState(false);
   
   // Date filter state
@@ -1302,62 +1284,6 @@ export default function AdminProducts() {
               {/* The two option axes sit side by side once there is room for
                   two 5-column rows; below xl they stack as before. */}
               <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 items-start">
-              {/* Simple colour list: the landing page (/step) colour panel reads this */}
-              <div className="border-t pt-4 mt-4">
-                <div className="flex items-center gap-2 mb-3">
-                  <span className="text-lg" aria-hidden>🎨</span>
-                  <div>
-                    <Label className="text-base font-semibold">কালার লিস্ট (ল্যান্ডিং পেজ)</Label>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      এখানে যোগ করা কালারগুলো ল্যান্ডিং পেজের (/step) অর্ডার ফর্মের পাশে দেখাবে। কাস্টমারকে একটি কালার সিলেক্ট করতে হবে
-                    </p>
-                  </div>
-                </div>
-
-                {colorList.length > 0 && (
-                  <div className="flex flex-wrap gap-2 mb-3">
-                    {colorList.map((color) => (
-                      <span
-                        key={color}
-                        className="inline-flex items-center gap-2 rounded-full border bg-secondary/40 pl-1.5 pr-1 py-1 text-sm"
-                      >
-                        <span
-                          className="h-5 w-5 rounded-full ring-1 ring-black/10 bg-gradient-to-br from-muted to-muted-foreground/30"
-                          style={swatchColor(color) ? { background: swatchColor(color) } : undefined}
-                        />
-                        {color}
-                        <button
-                          type="button"
-                          onClick={() => setColorList(colorList.filter((c) => c !== color))}
-                          className="rounded-full p-0.5 hover:bg-destructive/10"
-                          aria-label={`Remove ${color}`}
-                        >
-                          <X className="h-3.5 w-3.5 text-destructive" />
-                        </button>
-                      </span>
-                    ))}
-                  </div>
-                )}
-
-                <div className="flex gap-2">
-                  <Input
-                    value={newColor}
-                    onChange={(e) => setNewColor(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault();
-                        handleAddColor();
-                      }
-                    }}
-                    placeholder="যেমন: Black, Navy Blue, মেরুন"
-                    className="max-w-xs"
-                  />
-                  <Button type="button" variant="outline" size="sm" className="h-10" onClick={handleAddColor}>
-                    <Plus className="h-4 w-4 mr-1" />
-                    কালার যোগ করুন
-                  </Button>
-                </div>
-              </div>
 
               {/* Image-based color / product options */}
               <div className="border-t pt-4 mt-4">
