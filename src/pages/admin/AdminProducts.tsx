@@ -671,7 +671,7 @@ export default function AdminProducts() {
         .from('product_variations')
         .update({ is_active: false })
         .in('id', deactivatable);
-      if (error) console.error('Deactivate variations error:', error);
+      if (error) throw error;
     }
 
     if (deletable.length > 0) {
@@ -679,7 +679,7 @@ export default function AdminProducts() {
         .from('product_variations')
         .delete()
         .in('id', deletable);
-      if (error) console.error('Delete variations error:', error);
+      if (error) throw error;
     }
   };
 
@@ -693,7 +693,13 @@ export default function AdminProducts() {
       return;
     }
 
-    const validVariations = variations.filter((v) => v.name && v.price > 0);
+    const namedVariations = variations.filter((v) => v.name.trim());
+    const invalidVariation = namedVariations.find((v) => !Number.isFinite(v.price) || v.price <= 0);
+    if (invalidVariation) {
+      throw new Error(`Enter a price greater than 0 for “${invalidVariation.name.trim()}”.`);
+    }
+
+    const validVariations = namedVariations;
     
     // Dedupe by normalized name
     const uniqueValidVariations = Array.from(
@@ -705,10 +711,11 @@ export default function AdminProducts() {
     if (uniqueValidVariations.length === 0) return;
 
     // Get existing variations from DB
-    const { data: existingVars } = await supabase
+    const { data: existingVars, error: existingVarsError } = await supabase
       .from('product_variations')
       .select('id, name')
       .eq('product_id', productId);
+    if (existingVarsError) throw existingVarsError;
 
     const existingMap = new Map(
       (existingVars || []).map((v) => [v.name.trim().toLowerCase(), v.id])
@@ -755,7 +762,7 @@ export default function AdminProducts() {
         .from('product_variations')
         .update(item.data)
         .eq('id', item.id);
-      if (error) console.error('Update variation error:', error);
+      if (error) throw error;
     }
 
     // Insert new variations
@@ -763,10 +770,7 @@ export default function AdminProducts() {
       const { error } = await supabase
         .from('product_variations')
         .insert(toInsert);
-      if (error) {
-        console.error('Insert variations error:', error);
-        toast.error('Failed to save new variations');
-      }
+      if (error) throw error;
     }
   };
 
@@ -918,14 +922,11 @@ export default function AdminProducts() {
       console.log('Saving product data:', JSON.stringify(productData));
       
       if (editingProduct) {
-        const result = await updateProduct(editingProduct.id, productData);
-        console.log('Update result:', JSON.stringify(result));
+        await updateProduct(editingProduct.id, productData);
         productId = editingProduct.id;
-        toast.success('Product updated successfully');
       } else {
         const newProduct = await createProduct(productData);
         productId = newProduct.id;
-        toast.success('Product created successfully');
       }
 
 
@@ -935,8 +936,10 @@ export default function AdminProducts() {
 
       setIsDialogOpen(false);
       loadData();
+      toast.success(editingProduct ? 'Product updated successfully' : 'Product created successfully');
     } catch (error) {
-      toast.error('Failed to save product');
+      console.error('Failed to save product or options:', error);
+      toast.error(error instanceof Error ? `Failed to save: ${error.message}` : 'Failed to save product');
     } finally {
       setSubmitting(false);
     }
