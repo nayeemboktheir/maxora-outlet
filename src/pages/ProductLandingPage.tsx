@@ -6,6 +6,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";import {
   Truck,
   Phone,
   CheckCircle2,
@@ -22,7 +28,6 @@ import {
 import { toast } from "sonner";
 import { resolveVariantPricing } from "@/lib/pricing";
 import type { ProductSizeOption } from "@/types";
-import { swatchColor } from "@/lib/colorSwatch";
 import { resolveLandingSettings } from "@/lib/productLanding";
 import {
   OptimizedImage,
@@ -204,18 +209,6 @@ const useProductOptions = (product?: ProductData) => {
 
 type ProductOptions = ReturnType<typeof useProductOptions>;
 
-const ColorSwatch = ({ color, className = "" }: { color: ColorChoice; className?: string }) => {
-  const hex = swatchColor(color.label);
-  if (color.image) {
-    return <img src={color.image} alt="" loading="lazy" className={`object-cover ${className}`} />;
-  }
-  if (hex) return <span className={`block ${className}`} style={{ backgroundColor: hex }} />;
-  return (
-    <span className={`flex items-center justify-center bg-gradient-to-br from-primary/20 to-accent/20 text-foreground font-bold ${className}`}>
-      {color.label.charAt(0).toUpperCase()}
-    </span>
-  );
-};
 
 
 // ====== Checkout Form ======
@@ -290,7 +283,6 @@ const CheckoutSection = memo(({ product, options, onSubmit, isSubmitting }: {
                   <span aria-hidden>🎨</span>
                   কালার নির্বাচন করুন <span className="text-primary-foreground/80">*</span>
                 </div>
-
                 <div className="p-4">
                   <div className="grid grid-cols-4 gap-3">
                     {colors.map((c) => {
@@ -308,15 +300,15 @@ const CheckoutSection = memo(({ product, options, onSubmit, isSubmitting }: {
                             active ? 'bg-primary/10' : 'hover:bg-secondary/60'
                           } ${soldOut ? 'opacity-50 cursor-not-allowed' : ''}`}
                         >
-                          <span
-                            className={`relative block rounded-full p-0.5 transition-all ${
-                              active ? 'ring-2 ring-primary' : 'ring-1 ring-border group-hover:ring-primary/50'
-                            }`}
-                          >
-                            <ColorSwatch color={c} className="w-11 h-11 rounded-full ring-1 ring-black/10" />
-                            {active && (
-                              <CheckCircle2 className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-background text-primary" />
+                          <span className={`relative block rounded-full p-0.5 transition-all ${
+                            active ? 'ring-2 ring-primary' : 'ring-1 ring-border group-hover:ring-primary/50'
+                          }`}>
+                            {c.image ? (
+                              <img src={c.image} alt="" loading="lazy" className="w-11 h-11 rounded-full object-cover ring-1 ring-black/10" />
+                            ) : (
+                              <span className="block w-11 h-11 rounded-full bg-gradient-to-br from-primary/20 to-accent/20 ring-1 ring-black/10" />
                             )}
+                            {active && <CheckCircle2 className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-background text-primary" />}
                           </span>
                           <span className={`text-xs leading-tight text-center line-clamp-2 ${
                             active ? 'text-primary font-bold' : 'text-foreground font-medium'
@@ -327,12 +319,9 @@ const CheckoutSection = memo(({ product, options, onSubmit, isSubmitting }: {
                       );
                     })}
                   </div>
-
                   <div className="mt-4 pt-3 border-t border-border text-sm text-center">
                     {selectedColor ? (
-                      <span className="text-foreground">
-                        নির্বাচিত কালার: <span className="font-bold text-primary">{selectedColor.label}</span>
-                      </span>
+                      <span className="text-foreground">নির্বাচিত কালার: <span className="font-bold text-primary">{selectedColor.label}</span></span>
                     ) : (
                       <span className="text-destructive text-xs">* কালার সিলেক্ট করুন</span>
                     )}
@@ -361,7 +350,6 @@ const CheckoutSection = memo(({ product, options, onSubmit, isSubmitting }: {
                     <p className="text-xl font-bold text-primary">৳{unitPrice.toLocaleString()}</p>
                   </div>
                 </div>
-
                 {/* Size Selection */}
                 {sizes.length > 0 && (
                   <div ref={sizeSelectionRef} className="mb-4">
