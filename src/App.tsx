@@ -46,6 +46,7 @@ import AdminMarketing from '@/pages/admin/AdminMarketing';
 import AdminSMS from '@/pages/admin/AdminSMS';
 import AdminLandingPages from '@/pages/admin/AdminLandingPages';
 import AdminLandingPageEditor from '@/pages/admin/AdminLandingPageEditor';
+import AdminProductLandingEditor from '@/pages/admin/AdminProductLandingEditor';
 import AdminContactSubmissions from '@/pages/admin/AdminContactSubmissions';
 import AdminSiteSettings from '@/pages/admin/AdminSiteSettings';
 import AdminSocialMedia from '@/pages/admin/AdminSocialMedia';
@@ -118,6 +119,7 @@ const App = () => (
               <Route path="/admin/order-protection" element={<AdminLayout><AdminOrderProtection /></AdminLayout>} />
               <Route path="/admin/contact-submissions" element={<AdminLayout><AdminContactSubmissions /></AdminLayout>} />
               <Route path="/admin/landing-pages" element={<AdminLayout><AdminLandingPages /></AdminLayout>} />
+              <Route path="/admin/landing-pages/product/:productId" element={<AdminLayout><AdminProductLandingEditor /></AdminLayout>} />
               <Route path="/admin/landing-pages/:id" element={<AdminLayout><AdminLandingPageEditor /></AdminLayout>} />
               <Route path="/admin/courier-history" element={<AdminLayout><AdminCourierHistory /></AdminLayout>} />
               <Route path="/admin/courier-settings" element={<AdminLayout><AdminCourierSettings /></AdminLayout>} />

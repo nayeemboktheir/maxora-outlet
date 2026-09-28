@@ -800,6 +800,7 @@ export type Database = {
           is_active: boolean | null
           is_featured: boolean | null
           is_new: boolean | null
+          landing_settings: Json
           long_description: string | null
           name: string
           original_price: number | null
@@ -823,6 +824,7 @@ export type Database = {
           is_active?: boolean | null
           is_featured?: boolean | null
           is_new?: boolean | null
+          landing_settings?: Json
           long_description?: string | null
           name: string
           original_price?: number | null
@@ -846,6 +848,7 @@ export type Database = {
           is_active?: boolean | null
           is_featured?: boolean | null
           is_new?: boolean | null
+          landing_settings?: Json
           long_description?: string | null
           name?: string
           original_price?: number | null
