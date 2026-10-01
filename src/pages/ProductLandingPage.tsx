@@ -18,6 +18,8 @@ import {
   ShoppingBag,
   MessageCircle,
   MapPin,
+  Plus,
+  Trash2,
 } from "lucide-react";
 
 import {
@@ -72,7 +74,8 @@ interface OrderForm {
   name: string;
   phone: string;
   address: string;
-  quantity: number;
+  lines: OrderLine[];
+  totalQuantity: number;
   shippingZone?: ShippingZone;
   subtotal?: number;
   shippingCost?: number;
@@ -95,6 +98,23 @@ interface ColorChoice {
   image?: string | null;
   variationId?: string;
 }
+
+/** One size/colour combination in the order; same combination = same line. */
+interface OrderLine {
+  key: string;
+  size?: SizeChoice;
+  color?: ColorChoice;
+  quantity: number;
+  unitPrice: number;
+}
+
+const lineLabel = (line: OrderLine) =>
+  [line.color?.label, line.size?.label].filter(Boolean).join(" / ");
+
+const mergeLine = (lines: OrderLine[], line: OrderLine): OrderLine[] =>
+  lines.some((l) => l.key === line.key)
+    ? lines.map((l) => (l.key === line.key ? { ...l, quantity: l.quantity + line.quantity } : l))
+    : [...lines, line];
 
 /**
  * Products come in two shapes, and the landing page has to read both:
@@ -184,14 +204,18 @@ const useProductOptions = (product?: ProductData) => {
     [product, hasColorVariations, selectedSize, combo]
   );
 
-  const variationId = selectedColor?.variationId ?? selectedSize?.variationId;
-  const pricing = product
-    ? resolveVariantPricing(
+  const priceFor = useCallback(
+    (size?: SizeChoice, color?: ColorChoice) => {
+      if (!product) return 0;
+      const variationId = color?.variationId ?? size?.variationId;
+      return resolveVariantPricing(
         { price: product.price, originalPrice: product.original_price },
         product.variations.find((v) => v.id === variationId),
-        product.sizes.find((sz) => sz.id === selectedSize?.sizeId)
-      )
-    : { price: 0 };
+        product.sizes.find((sz) => sz.id === size?.sizeId)
+      ).price;
+    },
+    [product]
+  );
 
   return {
     sizes,
@@ -202,8 +226,7 @@ const useProductOptions = (product?: ProductData) => {
     selectColor: setColorKey,
     isSizeSoldOut,
     isColorSoldOut,
-    unitPrice: pricing.price,
-    variationId,
+    unitPrice: priceFor(selectedSize, selectedColor),
   };
 };
 
@@ -215,9 +238,10 @@ type ProductOptions = ReturnType<typeof useProductOptions>;
 const CheckoutSection = memo(({ product, options, onSubmit, isSubmitting }: {
   product: ProductData; options: ProductOptions; onSubmit: (form: OrderForm) => void; isSubmitting: boolean;
 }) => {
-  const [form, setForm] = useState<OrderForm>({
-    name: "", phone: "", address: "", quantity: 1,
-  });
+  const [form, setForm] = useState({ name: "", phone: "", address: "" });
+  const [quantity, setQuantity] = useState(1);
+  /** Combinations already added with "আরও যোগ করুন"; the live picker selection rides on top. */
+  const [lines, setLines] = useState<OrderLine[]>([]);
   const [shippingZone, setShippingZone] = useState<ShippingZone>('outside_dhaka');
   const formRef = useRef<HTMLFormElement>(null);
   const sizeSelectionRef = useRef<HTMLDivElement>(null);
@@ -227,24 +251,72 @@ const CheckoutSection = memo(({ product, options, onSubmit, isSubmitting }: {
     isSizeSoldOut, isColorSoldOut, unitPrice,
   } = options;
 
-  const subtotal = unitPrice * form.quantity;
+  const hasOptions = sizes.length > 0 || colors.length > 0;
+  const optionWord = sizes.length > 0 && colors.length > 0 ? 'সাইজ/কালার' : sizes.length > 0 ? 'সাইজ' : 'কালার';
+
+  const selectionComplete =
+    (sizes.length === 0 || !!selectedSize) &&
+    (colors.length === 0 || !!selectedColor) &&
+    !(selectedSize && isSizeSoldOut(selectedSize)) &&
+    !(selectedColor && isColorSoldOut(selectedColor));
+
+  const currentLine: OrderLine | null = selectionComplete
+    ? {
+        key: `${selectedSize?.key ?? ''}|${selectedColor?.key ?? ''}`,
+        size: selectedSize,
+        color: selectedColor,
+        quantity,
+        unitPrice,
+      }
+    : null;
+
+  // A complete selection still in the picker is ordered too, so a single-item
+  // order never needs the "add" button.
+  const orderLines = currentLine ? mergeLine(lines, currentLine) : lines;
+  const totalQuantity = orderLines.reduce((sum, l) => sum + l.quantity, 0);
+  const subtotal = orderLines.reduce((sum, l) => sum + l.unitPrice * l.quantity, 0);
   const shippingCost = SHIPPING_RATES[shippingZone];
   const total = subtotal + shippingCost;
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  /** Explains (and scrolls to) whatever keeps the picker selection from being orderable. */
+  const reportSelectionProblem = () => {
     if (sizes.length > 0 && !selectedSize) {
       toast.error("সাইজ সিলেক্ট করুন");
       sizeSelectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      return;
-    }
-    if (colors.length > 0 && !selectedColor) {
+    } else if (colors.length > 0 && !selectedColor) {
       toast.error("কালার সিলেক্ট করুন");
       colorSelectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    } else {
+      toast.error("এই কম্বিনেশন স্টকে নেই");
+    }
+  };
+
+  const addCurrentLine = () => {
+    if (!currentLine) {
+      reportSelectionProblem();
       return;
     }
-    if ((selectedSize && isSizeSoldOut(selectedSize)) || (selectedColor && isColorSoldOut(selectedColor))) {
-      toast.error("এই কম্বিনেশন স্টকে নেই");
+    setLines(orderLines);
+    selectSize("");
+    selectColor("");
+    setQuantity(1);
+    toast.success(`যোগ হয়েছে — এবার আরেকটি ${optionWord} বেছে নিন`);
+  };
+
+  const changeLineQuantity = (key: string, delta: number) => {
+    setLines((prev) =>
+      prev.map((l) => (l.key === key ? { ...l, quantity: Math.max(1, l.quantity + delta) } : l))
+    );
+  };
+
+  const removeLine = (key: string) => {
+    setLines((prev) => prev.filter((l) => l.key !== key));
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (orderLines.length === 0) {
+      reportSelectionProblem();
       return;
     }
     if (!form.name.trim() || !form.phone.trim() || !form.address.trim()) {
@@ -255,10 +327,10 @@ const CheckoutSection = memo(({ product, options, onSubmit, isSubmitting }: {
       toast.error("সঠিক মোবাইল নম্বর দিন");
       return;
     }
-    onSubmit({ ...form, shippingZone, subtotal, shippingCost, total });
+    onSubmit({ ...form, lines: orderLines, totalQuantity, shippingZone, subtotal, shippingCost, total });
   };
 
-  const updateForm = useCallback((key: keyof OrderForm, value: any) => {
+  const updateForm = useCallback((key: keyof typeof form, value: string) => {
     setForm(prev => ({ ...prev, [key]: value }));
   }, []);
 
@@ -322,6 +394,8 @@ const CheckoutSection = memo(({ product, options, onSubmit, isSubmitting }: {
                   <div className="mt-4 pt-3 border-t border-border text-sm text-center">
                     {selectedColor ? (
                       <span className="text-foreground">নির্বাচিত কালার: <span className="font-bold text-primary">{selectedColor.label}</span></span>
+                    ) : lines.length > 0 ? (
+                      <span className="text-muted-foreground text-xs">আরেকটি কালার নিতে চাইলে সিলেক্ট করুন</span>
                     ) : (
                       <span className="text-destructive text-xs">* কালার সিলেক্ট করুন</span>
                     )}
@@ -371,7 +445,7 @@ const CheckoutSection = memo(({ product, options, onSubmit, isSubmitting }: {
                         </button>
                       ))}
                     </div>
-                    {!selectedSize && (
+                    {!selectedSize && lines.length === 0 && (
                       <p className="text-xs text-destructive mt-1">* সাইজ সিলেক্ট করুন</p>
                     )}
                   </div>
@@ -383,17 +457,67 @@ const CheckoutSection = memo(({ product, options, onSubmit, isSubmitting }: {
                   <div className="flex items-center gap-3">
                     <button
                       type="button"
-                      onClick={() => updateForm('quantity', Math.max(1, form.quantity - 1))}
+                      onClick={() => setQuantity((q) => Math.max(1, q - 1))}
                       className="w-9 h-9 rounded-full bg-muted flex items-center justify-center hover:bg-muted/70 font-bold text-lg text-foreground"
                     >−</button>
-                    <span className="text-lg font-bold w-6 text-center text-foreground">{form.quantity}</span>
+                    <span className="text-lg font-bold w-6 text-center text-foreground">{quantity}</span>
                     <button
                       type="button"
-                      onClick={() => updateForm('quantity', form.quantity + 1)}
+                      onClick={() => setQuantity((q) => q + 1)}
                       className="w-9 h-9 rounded-full bg-primary text-primary-foreground flex items-center justify-center hover:bg-primary/90 font-bold text-lg"
                     >+</button>
                   </div>
                 </div>
+
+                {hasOptions && (
+                  <button
+                    type="button"
+                    onClick={addCurrentLine}
+                    className="mt-3 w-full flex items-center justify-center gap-2 rounded-lg border-2 border-dashed border-primary/60 py-2.5 text-sm font-semibold text-primary hover:bg-primary/5 transition-colors"
+                  >
+                    <Plus className="h-4 w-4" />
+                    আরও {optionWord} যোগ করুন
+                  </button>
+                )}
+
+                {/* Combinations already added */}
+                {lines.length > 0 && (
+                  <div className="mt-4 space-y-2">
+                    <p className="text-sm font-medium text-foreground">যোগ করা পণ্য</p>
+                    {lines.map((l) => (
+                      <div key={l.key} className="flex items-center gap-3 rounded-lg border border-border bg-secondary/30 p-2.5">
+                        {l.color?.image && (
+                          <img src={l.color.image} alt="" loading="lazy" className="w-9 h-9 rounded-full object-cover ring-1 ring-black/10 flex-shrink-0" />
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-semibold text-foreground truncate">{lineLabel(l)}</p>
+                          <p className="text-xs text-muted-foreground">৳{l.unitPrice.toLocaleString()} × {l.quantity}</p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => changeLineQuantity(l.key, -1)}
+                            className="w-7 h-7 rounded-full bg-muted flex items-center justify-center hover:bg-muted/70 font-bold text-foreground"
+                          >−</button>
+                          <span className="text-sm font-bold w-5 text-center text-foreground">{l.quantity}</span>
+                          <button
+                            type="button"
+                            onClick={() => changeLineQuantity(l.key, 1)}
+                            className="w-7 h-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center hover:bg-primary/90 font-bold"
+                          >+</button>
+                          <button
+                            type="button"
+                            onClick={() => removeLine(l.key)}
+                            aria-label="মুছে ফেলুন"
+                            className="w-7 h-7 rounded-full flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -448,8 +572,18 @@ const CheckoutSection = memo(({ product, options, onSubmit, isSubmitting }: {
             {/* Order Summary */}
             <div className="gradient-dark rounded-xl p-4 text-white">
               <div className="space-y-2 text-sm">
+                {hasOptions && orderLines.length > 0 && (
+                  <div className="space-y-1 pb-2 border-b border-white/20">
+                    {orderLines.map((l) => (
+                      <div key={l.key} className="flex justify-between gap-3 text-white/80">
+                        <span className="truncate">{lineLabel(l)} × {l.quantity}</span>
+                        <span>৳{(l.unitPrice * l.quantity).toLocaleString()}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
                 <div className="flex justify-between">
-                  <span className="text-white/60">সাবটোটাল ({form.quantity}টি)</span>
+                  <span className="text-white/60">সাবটোটাল ({totalQuantity}টি)</span>
                   <span>৳{subtotal.toLocaleString()}</span>
                 </div>
                 <div className="flex justify-between">
@@ -601,21 +735,20 @@ const ProductLandingPage = () => {
   const handleOrderSubmit = async (form: OrderForm) => {
     if (!product) return;
     setIsSubmitting(true);
-    const { selectedSize, selectedColor, variationId } = options;
 
     try {
       const { data, error } = await supabase.functions.invoke('place-order', {
         body: {
           userId: null,
-          items: [{
+          items: form.lines.map((l) => ({
             productId: product.id,
-            variationId: variationId || null,
-            sizeId: selectedSize?.sizeId || null,
-            size: selectedSize?.sizeId ? selectedSize.label : null,
+            variationId: l.color?.variationId ?? l.size?.variationId ?? null,
+            sizeId: l.size?.sizeId || null,
+            size: l.size?.sizeId ? l.size.label : null,
             // A colour backed by a variation is already recorded via variationId.
-            color: selectedColor && !selectedColor.variationId ? selectedColor.label : null,
-            quantity: form.quantity,
-          }],
+            color: l.color && !l.color.variationId ? l.color.label : null,
+            quantity: l.quantity,
+          })),
           shipping: { name: form.name, phone: form.phone, address: form.address },
           shippingZone: form.shippingZone,
           orderSource: 'landing_page',
@@ -640,8 +773,13 @@ const ProductLandingPage = () => {
           customerName: form.name,
           phone: form.phone,
           total: form.total,
-          items: [{ productId: product.id, productName: product.name, price: form.subtotal! / form.quantity, quantity: form.quantity }],
-          numItems: form.quantity,
+          items: form.lines.map((l) => ({
+            productId: product.id,
+            productName: lineLabel(l) ? `${product.name} (${lineLabel(l)})` : product.name,
+            price: l.unitPrice,
+            quantity: l.quantity,
+          })),
+          numItems: form.totalQuantity,
           fromLandingPage: true,
           landingPageSlug: slug,
         }
