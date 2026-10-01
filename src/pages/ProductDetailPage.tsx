@@ -214,6 +214,18 @@ const ProductDetailPage = () => {
           : 0
         : selectedVariation?.stock ?? product.stock;
 
+  // Overall availability, independent of whether colour/size have been
+  // picked yet — used for the STATUS badge so it doesn't read "Out of
+  // Stock" just because the customer hasn't selected a size.
+  const isInStock =
+    hasSizes && hasVariations
+      ? selectedVariation
+        ? sizes.some((sz) => stockFor(selectedVariation.id, sz.id) > 0)
+        : product.variations!.some((v) => sizes.some((sz) => stockFor(v.id, sz.id) > 0))
+      : hasSizes
+        ? sizes.some((sz) => (sz.stock ?? 0) > 0)
+        : (selectedVariation?.stock ?? product.stock) > 0;
+
   const handleAddToCart = () => {
     if (hasVariations && !selectedVariation) {
       toast.error('কালার সিলেক্ট করুন');
@@ -553,8 +565,8 @@ const ProductDetailPage = () => {
             {/* Stock Status */}
             <div className="flex items-center gap-2">
               <span className="text-sm font-medium text-muted-foreground">STATUS:</span>
-              <span className={`font-bold ${currentStock > 0 ? 'text-[#6B8E23]' : 'text-destructive'}`}>
-                {currentStock > 0 ? 'In Stock' : 'Out of Stock'}
+              <span className={`font-bold ${isInStock ? 'text-[#6B8E23]' : 'text-destructive'}`}>
+                {isInStock ? 'In Stock' : 'Out of Stock'}
               </span>
             </div>
 
@@ -578,7 +590,7 @@ const ProductDetailPage = () => {
                 size="lg" 
                 className="w-full h-12 font-semibold border-2 border-foreground hover:bg-muted"
                 onClick={handleAddToCart}
-                disabled={currentStock === 0}
+                disabled={!isInStock}
               >
                 <ShoppingCart className="h-4 w-4 mr-2" />
                 Add to Cart
@@ -587,7 +599,7 @@ const ProductDetailPage = () => {
                 size="lg" 
                 className="w-full h-12 bg-foreground text-background hover:bg-foreground/90 font-semibold"
                 onClick={handleBuyNow}
-                disabled={currentStock === 0}
+                disabled={!isInStock}
               >
                 Buy Now
               </Button>

@@ -148,6 +148,10 @@ export default function AdminProducts() {
   const [sizes, setSizes] = useState<ProductSizeRow[]>([]);
   const [hasSizes, setHasSizes] = useState(false);
   const [comboStock, setComboStock] = useState<Record<string, number>>({});
+  // Set right before an existing product's variations/sizes are loaded from
+  // the DB, so the auto-fill effect below doesn't treat a freshly-loaded 0
+  // cell (a deliberate "sold out") as "not set yet" and overwrite it.
+  const skipNextAutoCombo = useRef(false);
 
   // Image upload state
   const [productImages, setProductImages] = useState<string[]>([]);
@@ -328,7 +332,9 @@ export default function AdminProducts() {
       is_active: product.is_active ?? true,
     });
     setProductImages(product.images || []);
+    skipNextAutoCombo.current = true;
     await loadProductVariations(product.id);
+    skipNextAutoCombo.current = false;
     setIsDialogOpen(true);
   };
 
@@ -532,20 +538,22 @@ export default function AdminProducts() {
   };
 
   /**
-   * Fill the (colour, size) grid from the stock already typed on each axis.
+   * Derive the (colour, size) grid from the stock already typed on each axis.
    *
    * A cell is capped by whichever axis is scarcer, so a colour with 20 pieces
    * never claims 100 in every size. Cells that already hold a number are left
    * alone - 0 is the "not set yet" state here, so clearing a cell re-derives it
    * on the next run and deliberate figures survive.
    */
-  const handleAutoFillComboStock = () => {
+  const computeAutoComboStock = (base: Record<string, number>) => {
     const namedSizes = sizes.filter((sz) => sz.name.trim());
     const namedVariations = variations.filter((v) => v.name.trim());
 
-    if (namedSizes.length === 0 || namedVariations.length === 0) return;
+    if (namedSizes.length === 0 || namedVariations.length === 0) {
+      return { next: base, filled: 0 };
+    }
 
-    const next = { ...comboStock };
+    const next = { ...base };
     let filled = 0;
 
     for (const variation of namedVariations) {
@@ -560,6 +568,30 @@ export default function AdminProducts() {
         filled++;
       }
     }
+
+    return { next, filled };
+  };
+
+  // Runs automatically whenever the colour/size axes change, so admins don't
+  // have to press "স্টক অটো হিসাব করুন" by hand for every product. Skipped
+  // once right after an existing product's data is loaded (see
+  // `skipNextAutoCombo`), so freshly-loaded 0 cells aren't mistaken for
+  // "not set yet" and silently overwritten.
+  useEffect(() => {
+    if (skipNextAutoCombo.current) {
+      skipNextAutoCombo.current = false;
+      return;
+    }
+    if (!hasVariations || !hasSizes) return;
+    setComboStock((prev) => {
+      const { next, filled } = computeAutoComboStock(prev);
+      return filled > 0 ? next : prev;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [variations, sizes, hasVariations, hasSizes]);
+
+  const handleAutoFillComboStock = () => {
+    const { next, filled } = computeAutoComboStock(comboStock);
 
     if (filled === 0) {
       toast.error('হিসাব করার মতো স্টক পাওয়া যায়নি');
@@ -975,19 +1007,81 @@ export default function AdminProducts() {
         .eq('product_id', product.id)
         .order('sort_order');
 
+      let newVariations: { id: string }[] = [];
       if (existingVariations && existingVariations.length > 0) {
-        await supabase.from('product_variations').insert(
-          existingVariations.map((v, idx) => ({
-            product_id: newProduct.id,
-            name: v.name,
-            price: v.price,
-            original_price: v.original_price || null,
-            stock: v.stock,
-            sort_order: idx + 1,
-            is_active: v.is_active,
-            image_url: v.image_url || null,
-          }))
+        const { data: insertedVariations } = await supabase
+          .from('product_variations')
+          .insert(
+            existingVariations.map((v, idx) => ({
+              product_id: newProduct.id,
+              name: v.name,
+              price: v.price,
+              original_price: v.original_price || null,
+              stock: v.stock,
+              sort_order: idx + 1,
+              is_active: v.is_active,
+              image_url: v.image_url || null,
+            }))
+          )
+          .select('id')
+          .order('sort_order');
+        newVariations = insertedVariations || [];
+      }
+
+      // Fetch and duplicate sizes
+      const { data: existingSizes } = await supabase
+        .from('product_sizes')
+        .select('*')
+        .eq('product_id', product.id)
+        .order('sort_order');
+
+      let newSizes: { id: string }[] = [];
+      if (existingSizes && existingSizes.length > 0) {
+        const { data: insertedSizes } = await supabase
+          .from('product_sizes')
+          .insert(
+            existingSizes.map((sz, idx) => ({
+              product_id: newProduct.id,
+              name: sz.name,
+              price: sz.price ?? null,
+              original_price: sz.original_price ?? null,
+              image_url: sz.image_url || null,
+              stock: sz.stock ?? 0,
+              sort_order: idx + 1,
+            }))
+          )
+          .select('id')
+          .order('sort_order');
+        newSizes = insertedSizes || [];
+      }
+
+      // Duplicate the colour × size stock matrix, remapped to the new ids.
+      // Without this, duplicated products silently start with 0 stock for
+      // every combo, making every colour/size appear sold out.
+      if (existingVariations?.length && existingSizes?.length && newVariations.length && newSizes.length) {
+        const { data: existingStock } = await supabase
+          .from('product_variation_stock')
+          .select('variation_id, size_id, stock')
+          .in('variation_id', existingVariations.map((v) => v.id));
+
+        const variationIdMap = new Map(
+          existingVariations.map((v, idx) => [v.id, newVariations[idx]?.id])
         );
+        const sizeIdMap = new Map(existingSizes.map((sz, idx) => [sz.id, newSizes[idx]?.id]));
+
+        const stockRows = (existingStock || [])
+          .map((row) => ({
+            variation_id: variationIdMap.get(row.variation_id),
+            size_id: sizeIdMap.get(row.size_id),
+            stock: row.stock ?? 0,
+          }))
+          .filter((row): row is { variation_id: string; size_id: string; stock: number } =>
+            Boolean(row.variation_id && row.size_id)
+          );
+
+        if (stockRows.length > 0) {
+          await supabase.from('product_variation_stock').insert(stockRows);
+        }
       }
 
       toast.success('প্রোডাক্ট ডুপ্লিকেট হয়েছে');
