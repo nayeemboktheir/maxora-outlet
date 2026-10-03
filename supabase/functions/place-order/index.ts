@@ -373,7 +373,7 @@ Deno.serve(async (req) => {
 
     // Fetch products for UUID items & compute totals from DB values (prevents client tampering)
     const productById = new Map<string, { id: string; name: string; price: number; images: string[] | null }>();
-    const variationById = new Map<string, { id: string; product_id: string; name: string; price: number }>();
+    const variationById = new Map<string, { id: string; product_id: string; name: string; price: number; image_url: string | null }>();
     const sizeById = new Map<
       string,
       { id: string; product_id: string; name: string; price: number | null }
@@ -406,7 +406,7 @@ Deno.serve(async (req) => {
       if (variationIds.length > 0) {
         const { data: variations, error: variationsError } = await supabase
           .from('product_variations')
-          .select('id, product_id, name, price')
+          .select('id, product_id, name, price, image_url')
           .in('id', variationIds)
           .eq('is_active', true);
 
@@ -418,6 +418,7 @@ Deno.serve(async (req) => {
             product_id: v.product_id,
             name: v.name,
             price: Number(v.price),
+            image_url: v.image_url ?? null,
           });
         }
       }
@@ -483,7 +484,7 @@ Deno.serve(async (req) => {
         color: i.color ?? null,
         sizeName: sizeName,
         name: `${p.name}${v ? ` (${v.name})` : ''}${i.color ? ` [${i.color}]` : ''}${sizeName ? ` - ${sizeName}` : ''}`,
-        image: p.images?.[0] ?? null,
+        image: v?.image_url || p.images?.[0] || null,
         price: itemPrice,
         quantity: i.quantity,
       };
