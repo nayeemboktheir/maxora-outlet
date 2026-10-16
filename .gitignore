@@ -2,15 +2,10 @@
 logs
 *.log
 npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
-
-node_modules
-dist
+/dist
 dist-ssr
 *.local
+node_modules/
 
 # Migration backups, database credentials, and generated imports must never be committed.
 scripts/migrate-lovable-to-supabase/00-config.sh
