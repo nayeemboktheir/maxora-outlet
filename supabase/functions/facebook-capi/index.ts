@@ -178,8 +178,10 @@ serve(async (req) => {
     console.log("Custom data:", JSON.stringify(body.custom_data));
 
     // Build user data with hashing
+    // x-forwarded-for is a comma-separated proxy chain; Meta wants only the client's IP (the first entry)
+    const forwardedIp = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
     const userData: ConversionEvent["user_data"] = {
-      client_ip_address: req.headers.get("x-forwarded-for") || req.headers.get("cf-connecting-ip") || undefined,
+      client_ip_address: forwardedIp || req.headers.get("cf-connecting-ip") || undefined,
       client_user_agent: req.headers.get("user-agent") || undefined,
     };
 
