@@ -1,5 +1,6 @@
 import { useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { pushEcommerceEvent, type GAItem } from '@/hooks/useGoogleAnalytics';
 
 interface UserData {
   email?: string;
@@ -28,7 +29,40 @@ interface TrackEventParams {
   userData?: UserData;
   customData?: CustomData;
   eventId?: string; // For deduplication with browser pixel
+  gaItems?: GAItem[]; // Rich GA4 items (names/prices) when the caller has them
 }
+
+// FB event name -> GA4 ecommerce event name (pushed to GTM dataLayer)
+const GA_ECOMMERCE_EVENTS: Record<string, string> = {
+  ViewContent: 'view_item',
+  AddToCart: 'add_to_cart',
+  InitiateCheckout: 'begin_checkout',
+  AddPaymentInfo: 'add_payment_info',
+  Purchase: 'purchase',
+};
+
+// Build GA4 items from FB-style custom data when the caller didn't supply gaItems
+const buildGAItems = (eventName: string, customData: CustomData): GAItem[] => {
+  if (customData.contents?.length) {
+    return customData.contents.map((c) => ({
+      item_id: c.id,
+      item_name: c.id,
+      price: c.item_price,
+      quantity: c.quantity,
+    }));
+  }
+  const ids = customData.content_ids || [];
+  if (ids.length === 1) {
+    const quantity = eventName === 'AddToCart' ? customData.num_items || 1 : 1;
+    return [{
+      item_id: ids[0],
+      item_name: customData.content_name || ids[0],
+      price: customData.value !== undefined ? customData.value / quantity : undefined,
+      quantity,
+    }];
+  }
+  return ids.map((id) => ({ item_id: id, item_name: id, quantity: 1 }));
+};
 
 interface ProductItem {
   item_id: string;
@@ -290,7 +324,19 @@ export const useServerTracking = () => {
     userData = {},
     customData = {},
     eventId,
+    gaItems,
   }: TrackEventParams): Promise<{ facebook: { success: boolean; error?: string }; google: { success: boolean; error?: string }; tiktok: { success: boolean; error?: string } }> => {
+    // Browser-side: push GA4 ecommerce event to GTM dataLayer / gtag
+    const gaEcomEvent = GA_ECOMMERCE_EVENTS[eventName];
+    if (gaEcomEvent) {
+      pushEcommerceEvent(gaEcomEvent, {
+        currency: customData.currency || 'BDT',
+        value: customData.value,
+        ...(customData.order_id ? { transaction_id: customData.order_id } : {}),
+        items: gaItems?.length ? gaItems : buildGAItems(eventName, customData),
+      });
+    }
+
     // Map FB event names to GA4 event names
     const gaEventMap: Record<string, string> = {
       'PageView': 'page_view',
@@ -353,12 +399,13 @@ export const useServerTracking = () => {
       customData: {
         content_ids: [params.contentId],
         content_type: 'product',
+        content_name: params.contentName,
         value: params.value,
         currency: params.currency || 'BDT',
       },
     });
   }, [trackServerEvent]);
-  
+
   /**
    * Track when a user adds item to cart
    */
@@ -376,6 +423,7 @@ export const useServerTracking = () => {
       customData: {
         content_ids: [params.contentId],
         content_type: 'product',
+        content_name: params.contentName,
         value: params.value,
         num_items: params.quantity || 1,
         currency: params.currency || 'BDT',
@@ -457,6 +505,12 @@ export const useServerTracking = () => {
         currency: params.currency || 'BDT',
       },
       eventId: params.eventId, // Pass event ID for deduplication
+      gaItems: params.contents?.map((c, i) => ({
+        item_id: c.id,
+        item_name: params.contentNames?.[i] || c.id,
+        price: c.item_price,
+        quantity: c.quantity,
+      })),
     });
   }, [trackServerEvent]);
   
