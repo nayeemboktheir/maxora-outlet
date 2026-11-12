@@ -115,7 +115,6 @@ const loadPixelScript = (pixelId: string, userData?: UserData): Promise<void> =>
     // If fbq already exists, just (re)initialize with our pixel ID and advanced matching
     if (window.fbq && typeof window.fbq === 'function') {
       window.fbq('init', pixelId, advancedMatchingData);
-      window.fbq('track', 'PageView');
       console.log('Meta Pixel initialized (existing fbq) with Advanced Matching:', Object.keys(advancedMatchingData));
       isPixelLoading = false;
       isPixelInitialized = true;
@@ -128,7 +127,6 @@ const loadPixelScript = (pixelId: string, userData?: UserData): Promise<void> =>
       const waitForFbq = () => {
         if (window.fbq && typeof window.fbq === 'function') {
           window.fbq('init', pixelId, advancedMatchingData);
-          window.fbq('track', 'PageView');
           console.log('Meta Pixel initialized (waited for fbq) with Advanced Matching:', Object.keys(advancedMatchingData));
           isPixelLoading = false;
           isPixelInitialized = true;
@@ -167,7 +165,6 @@ const loadPixelScript = (pixelId: string, userData?: UserData): Promise<void> =>
     const checkAndInit = () => {
       if (window.fbq && typeof window.fbq === 'function') {
         window.fbq('init', pixelId, advancedMatchingData);
-        window.fbq('track', 'PageView');
         console.log('Meta Pixel initialized (new script) with Advanced Matching:', Object.keys(advancedMatchingData));
         isPixelLoading = false;
         isPixelInitialized = true;

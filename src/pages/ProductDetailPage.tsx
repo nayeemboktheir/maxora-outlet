@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { motion } from 'framer-motion';
@@ -46,8 +46,9 @@ const ProductDetailPage = () => {
   
   const dispatch = useAppDispatch();
   const wishlistItems = useAppSelector(selectWishlistItems);
-  const { trackViewContent, trackAddToCartWithEventId, generateEventId, isReady } = useFacebookPixel();
+  const { trackViewContentWithEventId, trackAddToCartWithEventId, generateEventId, isReady } = useFacebookPixel();
   const { trackAddToCart: trackServerAddToCart, trackViewContent: trackServerViewContent } = useServerTracking();
+  const lastViewContentProductId = useRef<string | null>(null);
 
   // Fetch social media settings for Call Now and Messenger buttons
   const { data: socialSettings } = useQuery({
@@ -85,27 +86,29 @@ const ProductDetailPage = () => {
 
   // Track ViewContent when product loads - both browser pixel and CAPI
   useEffect(() => {
-    if (product && isReady) {
-      console.log('Firing ViewContent for product:', product.name);
-      
-      // Browser pixel
-      trackViewContent({
+    // Fire once per product (not on every re-render / product object refresh)
+    if (product && isReady && lastViewContentProductId.current !== product.id) {
+      lastViewContentProductId.current = product.id;
+      const eventId = generateEventId('ViewContent');
+
+      // Browser pixel + CAPI share one event ID so Meta deduplicates them
+      trackViewContentWithEventId({
         content_ids: [product.id],
         content_name: product.name,
         content_type: 'product',
         value: product.price,
         currency: 'BDT',
-      });
-      
-      // Server-side CAPI
+      }, eventId);
+
       trackServerViewContent({
         contentId: product.id,
         contentName: product.name,
         value: product.price,
         currency: 'BDT',
+        eventId,
       });
     }
-  }, [product, isReady, trackViewContent, trackServerViewContent]);
+  }, [product, isReady, trackViewContentWithEventId, trackServerViewContent, generateEventId]);
 
   useEffect(() => {
     const loadProduct = async () => {

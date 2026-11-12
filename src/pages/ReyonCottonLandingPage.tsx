@@ -1007,6 +1007,7 @@ const ReyonCottonLandingPage = () => {
   const [selectedProductId, setSelectedProductId] = useState("");
   const checkoutRef = useRef<HTMLDivElement>(null);
   const hasTrackedViewContent = useRef(false);
+  const hasTrackedInitiateCheckout = useRef(false);
 
   const {
     isReady: pixelReady,
@@ -1088,6 +1089,7 @@ const ReyonCottonLandingPage = () => {
         contentId: firstProduct.id,
         contentName: 'Reyon Cotton Collection',
         value: firstProduct.price,
+        eventId,
       });
     }
   }, [products, pixelReady, trackViewContentWithEventId, generateEventId, serverTracking]);
@@ -1108,6 +1110,9 @@ const ReyonCottonLandingPage = () => {
 
   const trackCheckoutView = useCallback(() => {
     if (!products || products.length === 0 || !pixelReady) return;
+    // Only once per page visit — repeated CTA clicks must not re-fire InitiateCheckout
+    if (hasTrackedInitiateCheckout.current) return;
+    hasTrackedInitiateCheckout.current = true;
     const firstProduct = products[0];
     const eventId = generateEventId('InitiateCheckout');
 

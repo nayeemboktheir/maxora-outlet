@@ -344,9 +344,11 @@ export const useServerTracking = () => {
     value: number;
     currency?: string;
     userData?: UserData;
+    eventId?: string;
   }) => {
     return trackServerEvent({
       eventName: 'ViewContent',
+      eventId: params.eventId,
       userData: params.userData,
       customData: {
         content_ids: [params.contentId],

@@ -947,6 +947,7 @@ const DigitalTarselLandingPage = () => {
   const [showFloatingCta, setShowFloatingCta] = useState(true);
   const checkoutRef = useRef<HTMLDivElement>(null);
   const hasTrackedViewContent = useRef(false);
+  const hasTrackedInitiateCheckout = useRef(false);
 
   const { 
     isReady: pixelReady, 
@@ -1029,6 +1030,7 @@ const DigitalTarselLandingPage = () => {
         contentId: firstProduct.id,
         contentName: 'Digital Tarsel Collection',
         value: firstProduct.price,
+        eventId,
       });
       
       console.log('[Digital Tarsel] ViewContent tracked with event_id:', eventId);
@@ -1052,6 +1054,9 @@ const DigitalTarselLandingPage = () => {
 
   const trackCheckoutView = useCallback(() => {
     if (!products || products.length === 0 || !pixelReady) return;
+    // Only once per page visit — repeated CTA clicks must not re-fire InitiateCheckout
+    if (hasTrackedInitiateCheckout.current) return;
+    hasTrackedInitiateCheckout.current = true;
     
     const firstProduct = products[0];
     const eventId = generateEventId('InitiateCheckout');

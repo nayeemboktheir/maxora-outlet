@@ -1006,6 +1006,7 @@ const CottonTarselLandingPage = () => {
   const [selectedProductId, setSelectedProductId] = useState("");
   const checkoutRef = useRef<HTMLDivElement>(null);
   const hasTrackedViewContent = useRef(false);
+  const hasTrackedInitiateCheckout = useRef(false);
 
   // Facebook Pixel & Server Tracking
   const { 
@@ -1094,6 +1095,7 @@ const CottonTarselLandingPage = () => {
         contentId: firstProduct.id,
         contentName: 'Cotton Tarsel Collection',
         value: firstProduct.price,
+        eventId,
       });
       
       console.log('[Cotton Tarsel] ViewContent tracked with event_id:', eventId);
@@ -1119,6 +1121,9 @@ const CottonTarselLandingPage = () => {
   // Track InitiateCheckout when user scrolls to checkout
   const trackCheckoutView = useCallback(() => {
     if (!products || products.length === 0 || !pixelReady) return;
+    // Only once per page visit — repeated CTA clicks must not re-fire InitiateCheckout
+    if (hasTrackedInitiateCheckout.current) return;
+    hasTrackedInitiateCheckout.current = true;
     
     const firstProduct = products[0];
     const eventId = generateEventId('InitiateCheckout');
