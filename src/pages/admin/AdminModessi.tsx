@@ -51,7 +51,7 @@ import { cn } from '@/lib/utils';
 //   lost on cancelled parcels. Orders on the way or waiting for a price are shown as pending.
 
 const ORDER_COLUMNS =
-  'id, order_number, shipping_name, total, shipping_cost, steadfast_sent_at, courier_status, courier_cod_amount, courier_delivery_charge, tracking_number, order_items(quantity, price, product_id, product_name), order_modessi_costs(cost)';
+  'id, order_number, shipping_name, total, shipping_cost, steadfast_sent_at, courier_status, courier_cod_amount, courier_delivery_charge, tracking_number, steadfast_consignment_id, order_items(quantity, price, product_id, product_name), order_modessi_costs(cost)';
 
 const ORDERS_KEY = 'modessi-orders';
 const PRICES_KEY = 'modessi-prices';
@@ -71,7 +71,7 @@ const profitClass = (value: number) =>
 
 // Columns of the per-order breakdown inside an expanded day.
 const ORDER_GRID =
-  'grid grid-cols-[20px_150px_minmax(120px,1fr)_50px_90px_100px_80px_90px_150px] items-center gap-x-3 px-10';
+  'grid grid-cols-[20px_150px_minmax(120px,1fr)_120px_50px_90px_100px_80px_90px_150px] items-center gap-x-3 px-10';
 
 const schemaErrorHint = (err: unknown): string | null => {
   if (typeof err !== 'object' || err === null) return null;
@@ -526,11 +526,12 @@ export default function AdminModessi() {
                           {isOpen && (
                             <TableRow className="hover:bg-transparent">
                               <TableCell colSpan={8} className="bg-muted/30 p-0">
-                                <div className="min-w-[920px]">
+                                <div className="min-w-[1050px]">
                                   <div className={cn(ORDER_GRID, 'py-2 text-xs font-medium text-muted-foreground border-b')}>
                                     <span />
                                     <span>Order</span>
                                     <span>Customer</span>
+                                    <span>Steadfast ID</span>
                                     <span className="text-right">Items</span>
                                     <span className="text-right">Selling</span>
                                     <span className="text-right">Purchase</span>
@@ -554,6 +555,9 @@ export default function AdminModessi() {
                                           )}
                                         </span>
                                         <span className="truncate text-muted-foreground">{o.shipping_name}</span>
+                                        <span className="truncate font-mono text-xs select-all">
+                                          {o.steadfast_consignment_id ?? <span className="text-muted-foreground">—</span>}
+                                        </span>
                                         <span className="text-right text-muted-foreground">{o.products}</span>
                                         <span
                                           className={cn(

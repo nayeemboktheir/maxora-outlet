@@ -31,6 +31,7 @@ export interface LedgerOrderInput {
   courier_cod_amount: number | null;
   courier_delivery_charge: number | null;
   tracking_number: string | null;
+  steadfast_consignment_id: string | null;
   order_items: LedgerItem[];
   // One-to-one embed; PostgREST may return it as an object or a one-element array.
   order_modessi_costs: { cost: number } | { cost: number }[] | null;
@@ -50,6 +51,8 @@ export interface LedgerOrder {
   order_number: string;
   shipping_name: string;
   tracking_number: string | null;
+  /** Steadfast's consignment id, the number printed on Steadfast's own sticker. */
+  steadfast_consignment_id: string | null;
   courier_status: string | null;
   outcome: CourierOutcome;
   state: OrderState;
@@ -165,6 +168,7 @@ export function toLedgerOrder(o: LedgerOrderInput, book: PriceBook): LedgerOrder
     order_number: o.order_number,
     shipping_name: o.shipping_name,
     tracking_number: o.tracking_number,
+    steadfast_consignment_id: o.steadfast_consignment_id,
     courier_status: o.courier_status,
     outcome,
     state,
