@@ -23,6 +23,7 @@ import { Loader2, Plus, Trash2 } from 'lucide-react';
 
 interface OrderItem {
   id: string;
+  product_id?: string | null;
   product_name: string;
   product_image: string | null;
   quantity: number;
@@ -221,7 +222,8 @@ export function OrderEditDialog({ order, open, onOpenChange, onOrderUpdated }: O
         quantity: item.quantity,
         price: item.price,
         variation_name: item.variation_name,
-        product_id: null,
+        // Keep the product link so the Modessi cost can still be worked out after an edit.
+        product_id: item.product_id ?? null,
         variation_id: null,
       }));
 

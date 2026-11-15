@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { buildCourierUpdate } from "../_shared/steadfastStatus.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -47,6 +48,56 @@ async function getCredentials(supabase: any) {
   if (!secretKey) secretKey = Deno.env.get('STEADFAST_SECRET_KEY') || '';
 
   return { apiKey, secretKey };
+}
+
+// Only signed-in admins may call this function.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function isAdminRequest(supabase: any, req: Request): Promise<boolean> {
+  const token = (req.headers.get('authorization') || '').replace(/^Bearer\s+/i, '').trim();
+  if (!token) return false;
+  const { data: { user }, error } = await supabase.auth.getUser(token);
+  if (error || !user) return false;
+  const { data: isAdmin, error: roleError } = await supabase.rpc('has_role', {
+    _user_id: user.id,
+    _role: 'admin',
+  });
+  return !roleError && isAdmin === true;
+}
+
+// Save fetched statuses on the matching Steadfast orders, with the same rules
+// as the webhook (never regress a final status, map final status to orders.status).
+async function persistStatuses(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: any,
+  results: Record<string, SteadfastStatus | { error: string }>,
+): Promise<number> {
+  const codes = Object.keys(results).filter((code) => {
+    const r = results[code];
+    return !('error' in r) && Boolean(r.current_status);
+  });
+  if (codes.length === 0) return 0;
+
+  const { data: orders, error } = await supabase
+    .from('orders')
+    .select('id, tracking_number, status, courier_status, courier_status_updated_at')
+    .in('tracking_number', codes)
+    .not('steadfast_consignment_id', 'is', null);
+  if (error) {
+    console.error('Failed to load orders for status save:', error);
+    return 0;
+  }
+
+  let saved = 0;
+  const now = Date.now();
+  for (const order of orders ?? []) {
+    const status = (results[order.tracking_number] as SteadfastStatus).current_status;
+    const result = buildCourierUpdate(order, { status }, now);
+    if (!result.apply) continue;
+    const { error: updateError } = await supabase.from('orders').update(result.update).eq('id', order.id);
+    if (updateError) console.error(`Failed to save status for ${order.tracking_number}:`, updateError);
+    else saved++;
+  }
+  return saved;
 }
 
 async function getStatusByTrackingCode(
@@ -116,7 +167,16 @@ Deno.serve(async (req) => {
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+    const supabase = createClient(supabaseUrl, supabaseServiceKey, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    });
+
+    if (!(await isAdminRequest(supabase, req))) {
+      return new Response(
+        JSON.stringify({ error: 'Unauthorized' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
 
     const { apiKey, secretKey } = await getCredentials(supabase);
 
@@ -158,10 +218,14 @@ Deno.serve(async (req) => {
       }
     }
 
+    const saved = await persistStatuses(supabase, results);
+    console.log(`Saved ${saved} status change(s) to orders`);
+
     return new Response(
-      JSON.stringify({ 
-        success: true, 
-        results 
+      JSON.stringify({
+        success: true,
+        saved,
+        results
       }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );

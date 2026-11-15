@@ -24,7 +24,7 @@ import {
   Home,
   Video,
   Shield,
-  
+  Store,
 } from 'lucide-react';
 import { NavLink } from '@/components/NavLink';
 import {
@@ -57,6 +57,7 @@ const adminNavItems = [
   { title: 'Courier Settings', url: '/admin/courier-settings', icon: Truck },
   { title: 'Users', url: '/admin/users', icon: Users },
   { title: 'Inventory', url: '/admin/inventory', icon: Boxes },
+  { title: 'Modessi', url: '/admin/modessi', icon: Store },
   { title: 'Slider Settings', url: '/admin/banners', icon: Image },
   { title: 'Marketing', url: '/admin/marketing', icon: Megaphone },
   { title: 'SMS', url: '/admin/sms', icon: MessageSquare },
@@ -129,8 +130,9 @@ function AdminSidebar() {
           <SidebarGroupContent>
             <SidebarMenu>
               {adminNavItems.map((item) => {
-                const isActive = location.pathname === item.url || 
-                  (item.url !== '/admin' && location.pathname.startsWith(item.url));
+                // Match whole path segments so e.g. /admin/orders is not active on /admin/orders-archive.
+                const isActive = location.pathname === item.url ||
+                  (item.url !== '/admin' && location.pathname.startsWith(`${item.url}/`));
                 
                 return (
                   <SidebarMenuItem key={item.title}>

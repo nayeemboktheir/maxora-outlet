@@ -3,7 +3,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { store } from '@/store/store';
 import { AuthProvider } from '@/hooks/useAuth';
 import { FacebookPixelTracker } from '@/components/tracking/FacebookPixelTracker';
@@ -53,6 +53,7 @@ import AdminSocialMedia from '@/pages/admin/AdminSocialMedia';
 import AdminReports from '@/pages/admin/AdminReports';
 import AdminHomePageEdit from '@/pages/admin/AdminHomePageEdit';
 import AdminLandingVideoSettings from '@/pages/admin/AdminLandingVideoSettings';
+import AdminModessi from '@/pages/admin/AdminModessi';
 
 
 const queryClient = new QueryClient();
@@ -125,6 +126,9 @@ const App = () => (
               <Route path="/admin/courier-settings" element={<AdminLayout><AdminCourierSettings /></AdminLayout>} />
               <Route path="/admin/users" element={<AdminLayout><AdminUsers /></AdminLayout>} />
               <Route path="/admin/inventory" element={<AdminLayout><AdminInventory /></AdminLayout>} />
+              <Route path="/admin/modessi" element={<AdminLayout><AdminModessi /></AdminLayout>} />
+              {/* Modessi Products is now a tab on the Modessi page; keeps old links working. */}
+              <Route path="/admin/modessi-products" element={<Navigate to="/admin/modessi?tab=products" replace />} />
               <Route path="/admin/banners" element={<AdminLayout><AdminBanners /></AdminLayout>} />
               <Route path="/admin/marketing" element={<AdminLayout><AdminMarketing /></AdminLayout>} />
               <Route path="/admin/sms" element={<AdminLayout><AdminSMS /></AdminLayout>} />

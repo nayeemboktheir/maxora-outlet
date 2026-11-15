@@ -6,8 +6,25 @@ import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from 'sonner';
-import { Save, Eye, EyeOff, Truck, Package, Globe } from 'lucide-react';
+import { Save, Eye, EyeOff, Truck, Package, Globe, Copy, KeyRound } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
+
+const STEADFAST_WEBHOOK_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/steadfast-webhook`;
+
+const generateToken = () => {
+  const bytes = new Uint8Array(32);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+};
+
+const copyText = async (text: string, label: string) => {
+  try {
+    await navigator.clipboard.writeText(text);
+    toast.success(`${label} copied`);
+  } catch {
+    toast.error('Could not copy. Select the text and copy it manually.');
+  }
+};
 
 export default function AdminCourierSettings() {
   const [loading, setLoading] = useState(true);
@@ -18,7 +35,9 @@ export default function AdminCourierSettings() {
   const [showSteadfastSecretKey, setShowSteadfastSecretKey] = useState(false);
   const [steadfastApiKey, setSteadfastApiKey] = useState('');
   const [steadfastSecretKey, setSteadfastSecretKey] = useState('');
-  
+  const [steadfastWebhookToken, setSteadfastWebhookToken] = useState('');
+  const [showSteadfastWebhookToken, setShowSteadfastWebhookToken] = useState(false);
+
   // Carrybee
   const [carrybeeBaseUrl, setCarrybeeBaseUrl] = useState('https://developers.carrybee.com');
   const [carrybeeClientId, setCarrybeeClientId] = useState('');
@@ -43,7 +62,7 @@ export default function AdminCourierSettings() {
         .from('admin_settings')
         .select('key, value')
         .in('key', [
-          'steadfast_api_key', 'steadfast_secret_key', 'bdcourier_api_key',
+          'steadfast_api_key', 'steadfast_secret_key', 'steadfast_webhook_token', 'bdcourier_api_key',
           'carrybee_base_url', 'carrybee_client_id', 'carrybee_client_secret',
           'carrybee_client_context', 'carrybee_store_id',
         ]);
@@ -54,6 +73,7 @@ export default function AdminCourierSettings() {
         switch (setting.key) {
           case 'steadfast_api_key': setSteadfastApiKey(setting.value); break;
           case 'steadfast_secret_key': setSteadfastSecretKey(setting.value); break;
+          case 'steadfast_webhook_token': setSteadfastWebhookToken(setting.value); break;
           case 'bdcourier_api_key': setBdCourierApiKey(setting.value); break;
           case 'carrybee_base_url': setCarrybeeBaseUrl(setting.value); break;
           case 'carrybee_client_id': setCarrybeeClientId(setting.value); break;
@@ -93,6 +113,30 @@ export default function AdminCourierSettings() {
     } catch (error) {
       console.error('Failed to save settings:', error);
       toast.error('Failed to save Steadfast settings');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const saveSteadfastWebhookToken = async () => {
+    const token = steadfastWebhookToken.trim();
+    if (token.length < 16) {
+      toast.error('Token must be at least 16 characters. Use Generate.');
+      return;
+    }
+    setSaving(true);
+    try {
+      const { error } = await supabase
+        .from('admin_settings')
+        .upsert(
+          { key: 'steadfast_webhook_token', value: token, updated_at: new Date().toISOString() },
+          { onConflict: 'key' }
+        );
+      if (error) throw error;
+      toast.success('Webhook token saved. Paste the same token in the Steadfast panel.');
+    } catch (error) {
+      console.error('Failed to save settings:', error);
+      toast.error('Failed to save webhook token');
     } finally {
       setSaving(false);
     }
@@ -244,6 +288,87 @@ export default function AdminCourierSettings() {
                 <Save className="h-4 w-4 mr-2" />
                 {saving ? 'Saving...' : 'Save Steadfast Credentials'}
               </Button>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle>Steadfast Webhook</CardTitle>
+              <CardDescription>
+                Steadfast sends every delivery update here. Delivered and cancelled orders are then
+                marked automatically on the Orders and Modessi pages.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="steadfastWebhookUrl">Callback URL</Label>
+                <div className="flex gap-2">
+                  <Input id="steadfastWebhookUrl" value={STEADFAST_WEBHOOK_URL} readOnly className="font-mono text-xs" />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    onClick={() => copyText(STEADFAST_WEBHOOK_URL, 'Callback URL')}
+                    aria-label="Copy callback URL"
+                  >
+                    <Copy className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="steadfastWebhookToken">Auth Token</Label>
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <Input
+                      id="steadfastWebhookToken"
+                      type={showSteadfastWebhookToken ? 'text' : 'password'}
+                      value={steadfastWebhookToken}
+                      onChange={(e) => setSteadfastWebhookToken(e.target.value)}
+                      placeholder="Click Generate"
+                      className="pr-10 font-mono text-xs"
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="absolute right-0 top-0 h-full"
+                      onClick={() => setShowSteadfastWebhookToken(!showSteadfastWebhookToken)}
+                    >
+                      {showSteadfastWebhookToken ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </Button>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    onClick={() => copyText(steadfastWebhookToken, 'Auth token')}
+                    disabled={!steadfastWebhookToken}
+                    aria-label="Copy auth token"
+                  >
+                    <Copy className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="gap-2"
+                    onClick={() => {
+                      setSteadfastWebhookToken(generateToken());
+                      setShowSteadfastWebhookToken(true);
+                    }}
+                  >
+                    <KeyRound className="h-4 w-4" />
+                    Generate
+                  </Button>
+                </div>
+              </div>
+              <Button onClick={saveSteadfastWebhookToken} disabled={saving} className="w-full">
+                <Save className="h-4 w-4 mr-2" />
+                {saving ? 'Saving...' : 'Save Webhook Token'}
+              </Button>
+              <div className="text-sm text-muted-foreground space-y-1">
+                <p>1. Click <strong>Generate</strong>, then <strong>Save Webhook Token</strong>.</p>
+                <p>2. In the Steadfast merchant panel, open <strong>Webhook</strong>.</p>
+                <p>3. Paste the Callback URL and the Auth Token there and save.</p>
+              </div>
             </CardContent>
           </Card>
           <Card>

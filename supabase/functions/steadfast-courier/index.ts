@@ -57,6 +57,16 @@ function extractTrackingUrl(data: any): string | null {
   return walk(data);
 }
 
+// Fields written on every successful send: when it was sent (the Modessi page
+// groups orders by this date) and a clean courier state for the new consignment.
+const freshCourierState = () => ({
+  steadfast_sent_at: new Date().toISOString(),
+  courier_status: null,
+  courier_cod_amount: null,
+  courier_delivery_charge: null,
+  courier_status_updated_at: null,
+});
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function getCredentials(supabase: any) {
   // First try to get from admin_settings table
@@ -187,7 +197,8 @@ Deno.serve(async (req) => {
                 tracking_number: trackingCode, 
                 steadfast_consignment_id: consignmentId,
                 tracking_url: trackingUrl,
-                status: 'processing' 
+                status: 'processing',
+                ...freshCourierState(),
               })
               .eq('id', order.orderId);
           }
@@ -244,7 +255,8 @@ Deno.serve(async (req) => {
           tracking_number: trackingCode || consignmentId, 
           steadfast_consignment_id: consignmentId,
           tracking_url: trackingUrl,
-          status: 'processing' 
+          status: 'processing',
+          ...freshCourierState(),
         })
         .eq('id', order.orderId);
     }

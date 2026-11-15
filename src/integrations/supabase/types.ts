@@ -493,6 +493,33 @@ export type Database = {
         }
         Relationships: []
       }
+      // Written only by database triggers; admins can read, nobody can change a row.
+      order_modessi_costs: {
+        Row: {
+          cost: number
+          created_at: string
+          order_id: string
+        }
+        Insert: {
+          cost: number
+          created_at?: string
+          order_id: string
+        }
+        Update: {
+          cost?: number
+          created_at?: string
+          order_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "order_modessi_costs_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: true
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       order_items: {
         Row: {
           color: string | null
@@ -562,6 +589,10 @@ export type Database = {
       }
       orders: {
         Row: {
+          courier_cod_amount: number | null
+          courier_delivery_charge: number | null
+          courier_status: string | null
+          courier_status_updated_at: string | null
           created_at: string
           discount: number | null
           id: string
@@ -582,6 +613,7 @@ export type Database = {
           status: string
           steadfast_consignment_id: string | null
           steadfast_note: string | null
+          steadfast_sent_at: string | null
           subtotal: number
           total: number
           tracking_number: string | null
@@ -590,6 +622,10 @@ export type Database = {
           user_id: string | null
         }
         Insert: {
+          courier_cod_amount?: number | null
+          courier_delivery_charge?: number | null
+          courier_status?: string | null
+          courier_status_updated_at?: string | null
           created_at?: string
           discount?: number | null
           id?: string
@@ -610,6 +646,7 @@ export type Database = {
           status?: string
           steadfast_consignment_id?: string | null
           steadfast_note?: string | null
+          steadfast_sent_at?: string | null
           subtotal: number
           total: number
           tracking_number?: string | null
@@ -618,6 +655,10 @@ export type Database = {
           user_id?: string | null
         }
         Update: {
+          courier_cod_amount?: number | null
+          courier_delivery_charge?: number | null
+          courier_status?: string | null
+          courier_status_updated_at?: string | null
           created_at?: string
           discount?: number | null
           id?: string
@@ -638,6 +679,7 @@ export type Database = {
           status?: string
           steadfast_consignment_id?: string | null
           steadfast_note?: string | null
+          steadfast_sent_at?: string | null
           subtotal?: number
           total?: number
           tracking_number?: string | null
@@ -646,6 +688,36 @@ export type Database = {
           user_id?: string | null
         }
         Relationships: []
+      }
+      // Admin-only: products bought from Modessi (row = marked) and their wholesale unit price.
+      modessi_products: {
+        Row: {
+          created_at: string
+          price: number | null
+          product_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          price?: number | null
+          product_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          price?: number | null
+          product_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "modessi_products_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: true
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       product_sizes: {
         Row: {

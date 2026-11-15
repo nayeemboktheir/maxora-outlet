@@ -1,1 +1,6 @@
 project_id = "qrmatuhynplcqlrzpcri"
+
+# Steadfast calls this webhook without a Supabase JWT; the function checks its
+# own bearer token (admin_settings.steadfast_webhook_token) instead.
+[functions.steadfast-webhook]
+verify_jwt = false
