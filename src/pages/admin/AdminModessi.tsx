@@ -87,14 +87,25 @@ const schemaErrorHint = (err: unknown): string | null => {
   return null;
 };
 
+/** Orders placed before this (admin_settings.modessi_tracking_start) are not tracked here. */
+async function fetchTrackingStart(): Promise<string | null> {
+  const { data, error } = await supabase
+    .from('admin_settings')
+    .select('value')
+    .eq('key', 'modessi_tracking_start')
+    .maybeSingle();
+  if (error) throw error;
+  return data?.value || null;
+}
+
 async function fetchSteadfastOrders(): Promise<LedgerOrderInput[]> {
+  const trackingStart = await fetchTrackingStart();
   const pageSize = 1000;
   const all: LedgerOrderInput[] = [];
   for (let from = 0; ; from += pageSize) {
-    const { data, error } = await supabase
-      .from('orders')
-      .select(ORDER_COLUMNS)
-      .not('steadfast_sent_at', 'is', null)
+    let query = supabase.from('orders').select(ORDER_COLUMNS).not('steadfast_sent_at', 'is', null);
+    if (trackingStart) query = query.gte('created_at', trackingStart);
+    const { data, error } = await query
       .order('steadfast_sent_at', { ascending: false })
       .range(from, from + pageSize - 1);
     if (error) throw error;
@@ -112,7 +123,9 @@ async function fetchSteadfastOrders(): Promise<LedgerOrderInput[]> {
   if (splitError) throw splitError;
   const missing = ((splits ?? []) as unknown as { order_id: string }[]).map((s) => s.order_id).filter((id) => !seen.has(id));
   for (let i = 0; i < missing.length; i += 200) {
-    const { data, error } = await supabase.from('orders').select(ORDER_COLUMNS).in('id', missing.slice(i, i + 200));
+    let query = supabase.from('orders').select(ORDER_COLUMNS).in('id', missing.slice(i, i + 200));
+    if (trackingStart) query = query.gte('created_at', trackingStart);
+    const { data, error } = await query;
     if (error) throw error;
     all.push(...((data ?? []) as unknown as LedgerOrderInput[]));
   }
