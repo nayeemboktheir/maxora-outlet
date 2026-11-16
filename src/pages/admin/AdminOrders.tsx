@@ -31,7 +31,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { toast } from 'sonner';
-import { Search, Eye, Package, Truck, CheckCircle, XCircle, Clock, Send, Printer, Globe, UserPlus, Plus, Check, Tag, RefreshCw, RotateCcw, Loader2, UserCheck, History, Trash2, Calendar, Edit } from 'lucide-react';
+import { Search, Eye, Package, Truck, CheckCircle, XCircle, Clock, Send, Printer, Globe, UserPlus, Plus, Check, Tag, RefreshCw, RotateCcw, Loader2, UserCheck, History, Trash2, Calendar, Edit, Store } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar as CalendarComponent } from '@/components/ui/calendar';
 import { supabase } from '@/integrations/supabase/client';
@@ -53,7 +53,7 @@ import { InvoicePrintDialog } from '@/components/admin/InvoicePrintDialog';
 import { StickerPrintDialog } from '@/components/admin/StickerPrintDialog';
 import { ManualOrderDialog } from '@/components/admin/ManualOrderDialog';
 import { OrderEditDialog } from '@/components/admin/OrderEditDialog';
-import { notifyModessi } from '@/lib/modessiSync';
+import { notifyModessi, sendToModessi } from '@/lib/modessiSync';
 
 interface SteadfastStatus {
   tracking_code: string;
@@ -106,6 +106,8 @@ interface Order {
 const sourceOptions = [
   { value: 'web', label: 'Web Orders', icon: Globe },
   { value: 'manual', label: 'Manual Orders', icon: UserPlus },
+  // Not an order_source: orders whose Modessi items were sent to Modessi (modessi_order_links).
+  { value: 'modessi', label: 'Modessi Orders', icon: Store },
 ];
 
 const statusOptions = [
@@ -170,6 +172,21 @@ export default function AdminOrders() {
   const [selectedOrderIds, setSelectedOrderIds] = useState<Set<string>>(new Set());
   const [bulkSending, setBulkSending] = useState(false);
   const [bulkSendingCarrybee, setBulkSendingCarrybee] = useState(false);
+  const [sendingModessi, setSendingModessi] = useState(false);
+  const [modessiOrderIds, setModessiOrderIds] = useState<Set<string>>(new Set());
+
+  const loadModessiOrderIds = useCallback(async () => {
+    const { data, error } = await supabase
+      .from('modessi_order_links' as never)
+      .select('order_id')
+      .in('state', ['pending', 'sent', 'failed']);
+    if (error) return; // Modessi not set up: the tab just stays empty
+    setModessiOrderIds(new Set(((data ?? []) as unknown as { order_id: string }[]).map((r) => r.order_id)));
+  }, []);
+
+  useEffect(() => {
+    void loadModessiOrderIds();
+  }, [loadModessiOrderIds, orders]);
   const [sendingToCarrybee, setSendingToCarrybee] = useState(false);
   const [bulkStatusChanging, setBulkStatusChanging] = useState(false);
   const [isInvoiceDialogOpen, setIsInvoiceDialogOpen] = useState(false);
@@ -366,7 +383,9 @@ export default function AdminOrders() {
     return orders.filter(order => {
       // Fast-path: status check first (most selective)
       if (statusFilter !== 'all' && order.status !== statusFilter) return false;
-      if (sourceFilter !== 'all' && order.order_source !== sourceFilter) return false;
+      if (sourceFilter === 'modessi') {
+        if (!modessiOrderIds.has(order.id)) return false;
+      } else if (sourceFilter !== 'all' && order.order_source !== sourceFilter) return false;
 
       // Search
       if (searchLower && !(
@@ -403,7 +422,7 @@ export default function AdminOrders() {
 
       return true;
     });
-  }, [orders, debouncedSearch, statusFilter, sourceFilter, steadfastFilter, dateFrom, dateTo, steadfastStatuses]);
+  }, [orders, debouncedSearch, statusFilter, sourceFilter, steadfastFilter, dateFrom, dateTo, steadfastStatuses, modessiOrderIds]);
 
   // Pre-computed counts — O(n) single pass instead of O(n * statuses)
   const { statusCounts, sourceCounts, totalBySource } = useMemo(() => {
@@ -420,10 +439,16 @@ export default function AdminOrders() {
 
       // Global status counts
       sc[order.status] = (sc[order.status] || 0) + 1;
+
+      if (modessiOrderIds.has(order.id)) {
+        src.modessi = (src.modessi || 0) + 1;
+        if (!tbs.modessi) tbs.modessi = {};
+        tbs.modessi[order.status] = (tbs.modessi[order.status] || 0) + 1;
+      }
     }
 
     return { statusCounts: sc, sourceCounts: src, totalBySource: tbs };
-  }, [orders]);
+  }, [orders, modessiOrderIds]);
 
   const getStatusCount = useCallback((status: string) => {
     if (sourceFilter === 'all') return statusCounts[status] || 0;
@@ -794,6 +819,21 @@ export default function AdminOrders() {
     }
   };
 
+  const handleSendToModessi = async () => {
+    if (selectedOrderIds.size === 0) {
+      toast.error('Tick the orders to send to Modessi first');
+      return;
+    }
+    setSendingModessi(true);
+    try {
+      const reached = await sendToModessi([...selectedOrderIds]);
+      if (reached > 0) setSelectedOrderIds(new Set());
+      await loadModessiOrderIds();
+    } finally {
+      setSendingModessi(false);
+    }
+  };
+
   const handleBulkSendToCarrybee = async () => {
     if (selectedOrderIds.size === 0) {
       toast.error('Please select orders to send');
@@ -1139,6 +1179,21 @@ export default function AdminOrders() {
           >
             <Truck className="h-3 w-3" />
             In Transit ({getSteadfastCount('in_transit')})
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleSendToModessi}
+            disabled={sendingModessi}
+            className="gap-1 border-primary text-primary"
+            title={selectedOrderIds.size === 0 ? 'Tick orders below, then press this to send them to Modessi' : undefined}
+          >
+            {sendingModessi ? <Loader2 className="h-3 w-3 animate-spin" /> : <Send className="h-3 w-3" />}
+            {sendingModessi
+              ? 'Sending...'
+              : selectedOrderIds.size > 0
+                ? `Send ${selectedOrderIds.size} to Modessi`
+                : 'Send to Modessi'}
           </Button>
         </div>
         <Button

@@ -183,6 +183,16 @@ export async function forwardOrder(supabase: SupabaseClient, orderId: string): P
   if (existing?.state === 'cancelled') return { status: 'skipped', reason: 'cancelled' };
   const attempts = (existing?.attempts ?? 0) + 1;
 
+  // Never ship twice: Maxora already gave this order to a courier itself.
+  const { data: courier } = await supabase
+    .from('orders')
+    .select('steadfast_consignment_id, tracking_number')
+    .eq('id', orderId)
+    .maybeSingle();
+  if (courier?.steadfast_consignment_id || courier?.tracking_number) {
+    return { status: 'skipped', reason: 'already sent to a courier' };
+  }
+
   const payload = await buildPayload(supabase, orderId);
 
   if (payload.kind === 'none') {

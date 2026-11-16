@@ -10,7 +10,9 @@
 //   { action: 'sync_payments' | 'record_payment' | 'delete_payment' }  payments from Modessi
 //   { action: 'all' }            prices + pending sends/edits + statuses + payments (cron)
 //
-// Callers: an admin (their session JWT) or the cron (service-role key).
+// Callers: an admin (their session JWT), the service role, or the pg_cron job, which sends the
+// token from public.modessi_cron_secret (server-only table) in an x-cron-token header and may
+// only run { action: 'all' }.
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { safeEqual } from '../_shared/steadfastStatus.ts';
@@ -46,10 +48,18 @@ Deno.serve(async (req) => {
   const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
   const supabase = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false, autoRefreshToken: false } });
 
-  // Service role (cron) or a signed-in admin.
+  // The cron (x-cron-token, only for action 'all'), the service role, or a signed-in admin.
+  const sentCronToken = req.headers.get('x-cron-token') ?? '';
+  let isCron = false;
+  if (sentCronToken) {
+    const { data: secret } = await supabase.from('modessi_cron_secret').select('token').eq('id', 1).maybeSingle();
+    const cronToken: string = secret?.token ?? '';
+    isCron = cronToken.length >= 32 && safeEqual(sentCronToken, cronToken);
+    if (!isCron) return json({ error: 'Unauthorized' }, 401);
+  }
   const token = (req.headers.get('authorization') ?? '').replace(/^bearer\s+/i, '').trim();
-  if (!token) return json({ error: 'Unauthorized' }, 401);
-  if (!safeEqual(token, serviceKey)) {
+  if (!isCron && !token) return json({ error: 'Unauthorized' }, 401);
+  if (!isCron && !safeEqual(token, serviceKey)) {
     const { data: { user } } = await supabase.auth.getUser(token);
     if (!user) return json({ error: 'Unauthorized' }, 401);
     const { data: role } = await supabase
@@ -72,6 +82,8 @@ Deno.serve(async (req) => {
   } catch {
     /* empty body = {} */
   }
+
+  if (isCron && body.action !== 'all') return json({ error: 'The cron token only runs action "all"' }, 403);
 
   try {
     switch (body.action) {

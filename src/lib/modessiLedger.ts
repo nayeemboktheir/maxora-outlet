@@ -5,7 +5,7 @@
 //   cancelled      Steadfast cancelled it (✗). No delivery fee is taken in advance, so the
 //                  parcel's delivery charge is a loss. The product comes back, so its purchase
 //                  is not counted.
-//   on_the_way     still with Steadfast (⏳).
+//   on_the_way     not delivered yet (⏳): with Steadfast, or not shipped yet (notShipped).
 //   waiting_price  delivered, but a Modessi product in it has no price yet.
 //
 // "confirmed" money always reconciles:  profit = selling − purchase − delivery
@@ -27,6 +27,9 @@ export interface LedgerOrderInput {
   total: number;
   shipping_cost: number | null;
   steadfast_sent_at: string | null;
+  /** When the order was placed; dates orders that have not shipped yet. */
+  created_at?: string;
+  status?: string;
   courier_status: string | null;
   courier_cod_amount: number | null;
   courier_delivery_charge: number | null;
@@ -85,6 +88,8 @@ export interface LedgerOrder {
   courier_status: string | null;
   outcome: CourierOutcome;
   state: OrderState;
+  /** Not handed to a courier yet: 'modessi' when Modessi will ship it, else 'maxora'. */
+  notShipped: 'modessi' | 'maxora' | null;
   /** Quantity of Modessi items. */
   products: number;
   /** Collected cash for delivered orders, otherwise the order total. Mixed orders: Modessi items only. */
@@ -195,6 +200,9 @@ export function toLedgerOrder(o: LedgerOrderInput, book: PriceBook): LedgerOrder
   const deliveryEstimated = charge == null;
   const delivery = Number(charge ?? o.shipping_cost ?? 0);
 
+  const shipped = !!modessiSentAt(o);
+  const notShipped = shipped ? null : link && link.state !== 'cancelled' ? 'modessi' : 'maxora';
+
   const state: OrderState =
     outcome === 'cancelled'
       ? 'cancelled'
@@ -216,6 +224,7 @@ export function toLedgerOrder(o: LedgerOrderInput, book: PriceBook): LedgerOrder
     courier_status: split ? split.delivery_status : o.courier_status,
     outcome,
     state,
+    notShipped,
     products,
     amount,
     cost,
@@ -288,7 +297,10 @@ export function buildLedger(
 ): { days: LedgerDay[]; totals: LedgerTotals } {
   const byDate = new Map<string, LedgerDay>();
   for (const raw of orders) {
-    const sentAt = modessiSentAt(raw);
+    // Not shipped yet: shown on the day it was placed, unless it was cancelled before shipping.
+    const shippedAt = modessiSentAt(raw);
+    if (!shippedAt && raw.status === 'cancelled') continue;
+    const sentAt = shippedAt ?? raw.created_at;
     if (!sentAt) continue;
     const date = dayOf(sentAt);
     if ((from && date < from) || (to && date > to)) continue;

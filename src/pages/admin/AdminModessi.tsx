@@ -55,7 +55,7 @@ import { cn } from '@/lib/utils';
 //   lost on cancelled parcels. Orders on the way or waiting for a price are shown as pending.
 
 const ORDER_COLUMNS =
-  'id, order_number, shipping_name, total, shipping_cost, steadfast_sent_at, courier_status, courier_cod_amount, courier_delivery_charge, tracking_number, steadfast_consignment_id, order_items(quantity, price, product_id, product_name), order_modessi_costs(cost), ' +
+  'id, order_number, shipping_name, total, shipping_cost, created_at, status, steadfast_sent_at, courier_status, courier_cod_amount, courier_delivery_charge, tracking_number, steadfast_consignment_id, order_items(quantity, price, product_id, product_name), order_modessi_costs(cost), ' +
   'modessi_order_links(full_order, state, cod_amount, wholesale_total, delivery_status, courier_cod_amount, courier_delivery_charge, shipped_at, tracking_number, consignment_id)';
 
 const ORDERS_KEY = 'modessi-orders';
@@ -103,10 +103,13 @@ async function fetchSteadfastOrders(): Promise<LedgerOrderInput[]> {
   const pageSize = 1000;
   const all: LedgerOrderInput[] = [];
   for (let from = 0; ; from += pageSize) {
-    let query = supabase.from('orders').select(ORDER_COLUMNS).not('steadfast_sent_at', 'is', null);
-    if (trackingStart) query = query.gte('created_at', trackingStart);
+    // From the tracking start every order placed is listed, shipped or not (orders without
+    // Modessi products are dropped by the ledger). Without one: orders sent to Steadfast only.
+    const query = trackingStart
+      ? supabase.from('orders').select(ORDER_COLUMNS).gte('created_at', trackingStart)
+      : supabase.from('orders').select(ORDER_COLUMNS).not('steadfast_sent_at', 'is', null);
     const { data, error } = await query
-      .order('steadfast_sent_at', { ascending: false })
+      .order('created_at', { ascending: false })
       .range(from, from + pageSize - 1);
     if (error) throw error;
     all.push(...((data ?? []) as unknown as LedgerOrderInput[]));
@@ -649,7 +652,13 @@ export default function AdminModessi() {
                                             o.outcome === 'pending' && 'text-amber-700',
                                           )}
                                         >
-                                          {o.courier_status ? o.courier_status.replace(/_/g, ' ') : 'waiting for Steadfast'}
+                                          {o.courier_status
+                                            ? o.courier_status.replace(/_/g, ' ')
+                                            : o.notShipped === 'modessi'
+                                              ? 'Modessi to ship'
+                                              : o.notShipped === 'maxora'
+                                                ? 'not shipped yet'
+                                                : 'waiting for Steadfast'}
                                         </span>
                                       </li>
                                     ))}
@@ -681,7 +690,7 @@ export default function AdminModessi() {
                               >
                                 Products
                               </button>{' '}
-                              tab; their orders show up here once sent to Steadfast.
+                              tab; their orders show up here as soon as they are placed.
                             </>
                           )}
                         </TableCell>
