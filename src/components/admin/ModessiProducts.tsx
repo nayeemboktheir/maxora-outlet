@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { PackageCheck, Search, AlertTriangle, Check, Loader2 } from 'lucide-react';
+import { PackageCheck, Search, AlertTriangle, Check, Loader2, RefreshCw, Link2 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -18,12 +18,18 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 
 // Admin → Modessi → Products tab: mark which products are bought from Modessi and keep their
 // wholesale (paikari) unit price. Stored in the admin-only `modessi_products` table:
 // a row means "marked", and `price` may be empty until it is filled in.
 // The Orders tab only counts orders that contain marked products.
+//
+// Each marked product is linked to the matching product on modessi.shop. "Sync from Modessi"
+// (and a 15-minute cron) copies Modessi's wholesale price and stock onto linked products, and
+// new orders with these products are sent to Modessi to pack and ship. See
+// supabase/functions/_shared/modessi.ts.
 
 type Filter = 'all' | 'modessi' | 'other';
 
@@ -38,6 +44,38 @@ interface ProductRow {
 
 const PRODUCTS_KEY = ['modessi-admin-products'];
 const MARKED_KEY = ['modessi-admin-marked'];
+const CATALOG_KEY = ['modessi-catalog'];
+
+interface CatalogProduct {
+  id: string;
+  name: string;
+  price: number;
+  stock: number;
+  wholesale_price: number | null;
+}
+
+interface LinkInfo {
+  modessiProductId: string | null;
+  modessiName: string | null;
+  modessiStock: number | null;
+  syncedAt: string | null;
+}
+
+// supabase.functions.invoke puts a non-2xx body on error.context; surface its message.
+async function invokeSync<T>(body: Record<string, unknown>): Promise<T> {
+  const { data, error } = await supabase.functions.invoke('modessi-sync', { body });
+  if (error) {
+    let message = error.message;
+    try {
+      const ctx = (error as { context?: Response }).context;
+      if (ctx && typeof ctx.json === 'function') message = (await ctx.json())?.error ?? message;
+    } catch {
+      /* keep the generic message */
+    }
+    throw new Error(message);
+  }
+  return data as T;
+}
 
 const formatTk = (value: number) => {
   const rounded = Math.round(value);
@@ -47,8 +85,8 @@ const formatTk = (value: number) => {
 
 const missingTableHint = (err: unknown) => {
   const { code, message = '' } = (err ?? {}) as { code?: string; message?: string };
-  return code === 'PGRST205' || code === '42P01' || message.includes('modessi_products')
-    ? 'Run supabase/migrations/20261115140000_add_modessi_costs.sql in Supabase, then reload this page.'
+  return code === 'PGRST205' || code === '42P01' || code === '42703' || message.includes('modessi_')
+    ? 'Run supabase/migrations/20261115140000_add_modessi_costs.sql and 20261116120000_modessi_sync.sql in Supabase, then reload this page.'
     : null;
 };
 
@@ -61,6 +99,7 @@ export default function ModessiProducts() {
   const [savingIds, setSavingIds] = useState<Set<string>>(new Set());
   const [savedIds, setSavedIds] = useState<Set<string>>(new Set());
   const [bulkBusy, setBulkBusy] = useState(false);
+  const [syncBusy, setSyncBusy] = useState<null | 'sync' | 'match'>(null);
 
   const productsQuery = useQuery({
     queryKey: PRODUCTS_KEY,
@@ -77,14 +116,44 @@ export default function ModessiProducts() {
   const markedQuery = useQuery({
     queryKey: MARKED_KEY,
     queryFn: async () => {
-      const { data, error } = await supabase.from('modessi_products').select('product_id, price');
+      const { data, error } = await supabase
+        .from('modessi_products')
+        .select('product_id, price, modessi_product_id, modessi_name, modessi_stock, synced_at');
       if (error) throw error;
-      return new Map((data ?? []).map((r) => [r.product_id, r.price == null ? null : Number(r.price)]));
+      const rows = (data ?? []) as unknown as Array<{
+        product_id: string;
+        price: number | null;
+        modessi_product_id: string | null;
+        modessi_name: string | null;
+        modessi_stock: number | null;
+        synced_at: string | null;
+      }>;
+      return {
+        prices: new Map(rows.map((r) => [r.product_id, r.price == null ? null : Number(r.price)])),
+        links: new Map<string, LinkInfo>(
+          rows.map((r) => [
+            r.product_id,
+            { modessiProductId: r.modessi_product_id, modessiName: r.modessi_name, modessiStock: r.modessi_stock, syncedAt: r.synced_at },
+          ]),
+        ),
+      };
     },
     retry: 1,
   });
 
-  const marked = useMemo(() => markedQuery.data ?? new Map<string, number | null>(), [markedQuery.data]);
+  // Modessi's catalogue, for the link picker. Fails quietly until the connection is set up.
+  const catalogQuery = useQuery({
+    queryKey: CATALOG_KEY,
+    queryFn: async () => (await invokeSync<{ products: CatalogProduct[] }>({ action: 'catalog' })).products,
+    retry: false,
+    staleTime: 5 * 60_000,
+  });
+  const catalog = useMemo(() => catalogQuery.data ?? [], [catalogQuery.data]);
+
+  const marked = useMemo(() => markedQuery.data?.prices ?? new Map<string, number | null>(), [markedQuery.data]);
+  const links = useMemo(() => markedQuery.data?.links ?? new Map<string, LinkInfo>(), [markedQuery.data]);
+  const unlinkedCount = [...links.values()].filter((l) => !l.modessiProductId).length;
+  const lastSync = [...links.values()].map((l) => l.syncedAt).filter(Boolean).sort().pop() ?? null;
   const products = useMemo(() => productsQuery.data ?? [], [productsQuery.data]);
 
   const visible = useMemo(() => {
@@ -156,6 +225,42 @@ export default function ModessiProducts() {
       toast.error('Could not update the selected products');
     } finally {
       setBulkBusy(false);
+    }
+  };
+
+  const runSync = async (kind: 'sync' | 'match') => {
+    setSyncBusy(kind);
+    try {
+      if (kind === 'match') {
+        const r = await invokeSync<{ linked: number; ambiguous: string[]; prices: { updated: number; unpriced: string[] } }>({
+          action: 'auto_link',
+        });
+        toast.success(`Linked ${r.linked} product${r.linked === 1 ? '' : 's'} by name; ${r.prices.updated} synced from Modessi`);
+        if (r.ambiguous.length > 0) toast.warning(`More than one Modessi product is named: ${r.ambiguous.join(', ')}. Link these by hand.`);
+        if (r.prices.unpriced.length > 0) toast.warning(`No wholesale price on Modessi yet: ${r.prices.unpriced.join(', ')}`);
+      } else {
+        const r = await invokeSync<{ updated: number; missing: number; unpriced: string[] }>({ action: 'sync_prices' });
+        toast.success(`Synced price and stock of ${r.updated} product${r.updated === 1 ? '' : 's'} from Modessi`);
+        if (r.missing > 0) toast.warning(`${r.missing} linked product${r.missing === 1 ? ' is' : 's are'} no longer on Modessi`);
+        if (r.unpriced.length > 0) toast.warning(`No wholesale price on Modessi yet: ${r.unpriced.join(', ')}`);
+      }
+      refreshMarked();
+      queryClient.invalidateQueries({ queryKey: PRODUCTS_KEY });
+    } catch (err) {
+      toast.error((err as Error).message || 'Modessi sync failed');
+    } finally {
+      setSyncBusy(null);
+    }
+  };
+
+  const linkProduct = async (productId: string, modessiProductId: string | null) => {
+    try {
+      const c = catalog.find((x) => x.id === modessiProductId);
+      await invokeSync({ action: 'link', productId, modessiProductId, modessiName: c?.name ?? null });
+      refreshMarked();
+      toast.success(modessiProductId ? 'Linked. Press "Sync from Modessi" to pull its price.' : 'Unlinked');
+    } catch (err) {
+      toast.error((err as Error).message || 'Could not link the product');
     }
   };
 
@@ -253,6 +358,27 @@ export default function ModessiProducts() {
               recorded keep their cost.
             </p>
           </div>
+          <div className="flex flex-wrap items-center gap-2 rounded-md border bg-muted/40 p-3 text-sm">
+            <span className="text-muted-foreground">
+              {catalogQuery.error
+                ? `Not connected to Modessi: ${(catalogQuery.error as Error).message}`
+                : catalogQuery.isLoading
+                ? 'Connecting to Modessi…'
+                : `Connected to Modessi (${catalog.length} products).${
+                    unlinkedCount > 0 ? ` ${unlinkedCount} marked product${unlinkedCount === 1 ? ' is' : 's are'} not linked yet.` : ''
+                  }${lastSync ? ` Last sync ${new Date(lastSync).toLocaleString()}.` : ''}`}
+            </span>
+            <div className="flex gap-2 sm:ml-auto">
+              <Button size="sm" variant="outline" onClick={() => runSync('match')} disabled={!!syncBusy || !!catalogQuery.error}>
+                {syncBusy === 'match' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Link2 className="h-4 w-4" />}
+                Match by name
+              </Button>
+              <Button size="sm" onClick={() => runSync('sync')} disabled={!!syncBusy || !!catalogQuery.error}>
+                {syncBusy === 'sync' ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                Sync from Modessi
+              </Button>
+            </div>
+          </div>
           <div className="flex flex-col lg:flex-row lg:items-center gap-3">
             <div className="relative lg:max-w-xs w-full">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -326,6 +452,7 @@ export default function ModessiProducts() {
                   <TableHead>Product</TableHead>
                   <TableHead className="text-right">Selling Price</TableHead>
                   <TableHead>Modessi</TableHead>
+                  <TableHead>Modessi product</TableHead>
                   <TableHead>Modessi Price (৳ per unit)</TableHead>
                   <TableHead className="text-right">Margin / unit</TableHead>
                 </TableRow>
@@ -333,6 +460,7 @@ export default function ModessiProducts() {
               <TableBody>
                 {visible.map((p) => {
                   const isMarked = marked.has(p.id);
+                  const link = links.get(p.id);
                   const saved = marked.get(p.id) ?? null;
                   const draft = drafts[p.id];
                   const shown = draft ?? (saved == null ? '' : String(saved));
@@ -370,6 +498,41 @@ export default function ModessiProducts() {
                           onCheckedChange={(v) => handleToggle(p.id, v)}
                           aria-label={`${p.name} is from Modessi`}
                         />
+                      </TableCell>
+                      <TableCell>
+                        {isMarked ? (
+                          <div className="space-y-1">
+                            <Select
+                              value={link?.modessiProductId ?? 'none'}
+                              onValueChange={(v) => linkProduct(p.id, v === 'none' ? null : v)}
+                              disabled={catalog.length === 0}
+                            >
+                              <SelectTrigger
+                                className={cn('h-9 w-56', !link?.modessiProductId && 'border-amber-500/60')}
+                                aria-label={`Modessi product for ${p.name}`}
+                              >
+                                <SelectValue placeholder="Not linked">
+                                  {link?.modessiProductId
+                                    ? link.modessiName ?? catalog.find((c) => c.id === link.modessiProductId)?.name ?? 'Linked'
+                                    : 'Not linked'}
+                                </SelectValue>
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="none">Not linked</SelectItem>
+                                {catalog.map((c) => (
+                                  <SelectItem key={c.id} value={c.id}>
+                                    {c.name}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            {link?.modessiStock != null && (
+                              <div className="text-xs text-muted-foreground">Modessi stock: {link.modessiStock}</div>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">
@@ -413,7 +576,7 @@ export default function ModessiProducts() {
                 })}
                 {visible.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={6} className="py-8 text-center text-muted-foreground">
+                    <TableCell colSpan={7} className="py-8 text-center text-muted-foreground">
                       {products.length === 0 ? 'No products yet' : 'No products match'}
                     </TableCell>
                   </TableRow>

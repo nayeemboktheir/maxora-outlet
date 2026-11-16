@@ -145,6 +145,31 @@ async function sendToSteadfast(
   }
 }
 
+// Orders with Modessi items: Modessi ships those items and collects their COD itself.
+// A whole-Modessi order is not Maxora's to send; a split order's COD drops by Modessi's part.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function applyModessiSplit(supabase: any, order: SteadfastOrderRequest): Promise<{ order: SteadfastOrderRequest; error?: string }> {
+  if (!order.orderId) return { order };
+  const { data: link } = await supabase
+    .from('modessi_order_links')
+    .select('full_order, state, cod_amount, modessi_order_number')
+    .eq('order_id', order.orderId)
+    .maybeSingle();
+  if (!link || link.state === 'cancelled') return { order };
+
+  if (link.full_order) {
+    return {
+      order,
+      error: `Modessi ships this order${link.modessi_order_number ? ` (Modessi #${link.modessi_order_number})` : ''}. Do not send it to Steadfast from Maxora.`,
+    };
+  }
+  if (link.state !== 'sent') {
+    return { order, error: 'This order has Modessi items that have not reached Modessi yet. Resend them from Admin → Modessi first.' };
+  }
+  const cod = Math.max(0, Math.round((Number(order.cod_amount) - Number(link.cod_amount ?? 0)) * 100) / 100);
+  return { order: { ...order, cod_amount: order.cod_amount > 0 ? cod : 0 } };
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -180,7 +205,13 @@ Deno.serve(async (req) => {
       
       const results: { orderId: string; success: boolean; tracking_code?: string; consignment_id?: string; tracking_url?: string | null; error?: string }[] = [];
       
-      for (const order of body.orders as SteadfastOrderRequest[]) {
+      for (const requested of body.orders as SteadfastOrderRequest[]) {
+        const split = await applyModessiSplit(supabase, requested);
+        if (split.error) {
+          results.push({ orderId: requested.orderId, success: false, error: split.error });
+          continue;
+        }
+        const order = split.order;
         const result = await sendToSteadfast(order, apiKey, secretKey);
         
         if (result.success && result.data) {
@@ -223,15 +254,24 @@ Deno.serve(async (req) => {
     }
 
     // Single order request
-    const order = body as SteadfastOrderRequest;
-    console.log('Creating Steadfast order for:', order.invoice);
+    const requested = body as SteadfastOrderRequest;
+    console.log('Creating Steadfast order for:', requested.invoice);
 
-    if (!order.invoice || !order.recipient_name || !order.recipient_phone || !order.recipient_address || order.cod_amount === undefined) {
+    if (!requested.invoice || !requested.recipient_name || !requested.recipient_phone || !requested.recipient_address || requested.cod_amount === undefined) {
       return new Response(
         JSON.stringify({ error: 'Missing required fields' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
+
+    const split = await applyModessiSplit(supabase, requested);
+    if (split.error) {
+      return new Response(
+        JSON.stringify({ error: split.error }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+    const order = split.order;
 
     const result = await sendToSteadfast(order, apiKey, secretKey);
     

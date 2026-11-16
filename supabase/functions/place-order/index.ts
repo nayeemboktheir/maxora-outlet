@@ -3,6 +3,7 @@
 // Optimized for speed: returns response immediately, handles CAPI/SMS in background.
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.89.0';
+import { forwardOrder, modessiConfigured } from '../_shared/modessi.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -639,6 +640,13 @@ Deno.serve(async (req) => {
     const backgroundTasks = Promise.all([
       sendOrderSms(supabaseUrl, serviceKey, phone, name, orderNumber, total, orderId),
       sendOrderEmail(supabaseUrl, orderId, orderNumber, name, phone, address, subtotal, shippingCost, total, itemsFinal, notes),
+      // Modessi items go to Modessi, which packs and ships them. A failure is recorded on
+      // modessi_order_links and retried by modessi-sync; it never affects the customer.
+      modessiConfigured()
+        ? forwardOrder(supabase, orderId)
+            .then((r) => console.log('Modessi forward:', JSON.stringify(r)))
+            .catch((err) => console.error('Modessi forward failed:', err?.message ?? err))
+        : Promise.resolve(),
     ]);
 
     // Use EdgeRuntime.waitUntil to run tasks in background after response

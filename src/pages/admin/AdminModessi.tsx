@@ -26,6 +26,7 @@ import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import ModessiProducts from '@/components/admin/ModessiProducts';
+import ModessiShipments from '@/components/admin/ModessiShipments';
 import {
   Table,
   TableBody,
@@ -155,13 +156,14 @@ function OrderProfit({ o }: { o: LedgerOrder }) {
   return <span className={cn('font-semibold', profitClass(o.profit))}>{formatTk(o.profit)}</span>;
 }
 
-type ModessiTab = 'orders' | 'products';
+type ModessiTab = 'orders' | 'products' | 'shipments';
 
 export default function AdminModessi() {
   const queryClient = useQueryClient();
   // The tab lives in the URL so /admin/modessi?tab=products can be linked to directly.
   const [searchParams, setSearchParams] = useSearchParams();
-  const tab: ModessiTab = searchParams.get('tab') === 'products' ? 'products' : 'orders';
+  const tabParam = searchParams.get('tab');
+  const tab: ModessiTab = tabParam === 'products' || tabParam === 'shipments' ? tabParam : 'orders';
   const setTab = (next: ModessiTab) =>
     setSearchParams(
       (prev) => {
@@ -304,10 +306,18 @@ export default function AdminModessi() {
               </span>
             )}
           </TabsTrigger>
+          <TabsTrigger value="shipments" className="gap-2">
+            <Truck className="h-4 w-4" />
+            Sent to Modessi
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="products" className="mt-0">
           <ModessiProducts />
+        </TabsContent>
+
+        <TabsContent value="shipments" className="mt-0">
+          <ModessiShipments />
         </TabsContent>
 
         <TabsContent value="orders" className="mt-0 space-y-6">
