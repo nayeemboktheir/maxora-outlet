@@ -35,7 +35,36 @@ export interface LedgerOrderInput {
   order_items: LedgerItem[];
   // One-to-one embed; PostgREST may return it as an object or a one-element array.
   order_modessi_costs: { cost: number } | { cost: number }[] | null;
+  /** The order's Modessi parcel, when its Modessi items were sent to Modessi to ship. */
+  modessi_order_links?: ModessiLinkInput | ModessiLinkInput[] | null;
 }
+
+export interface ModessiLinkInput {
+  full_order: boolean;
+  state: string;
+  cod_amount: number | null;
+  wholesale_total: number | null;
+  delivery_status: string | null;
+  courier_cod_amount: number | null;
+  courier_delivery_charge: number | null;
+  shipped_at: string | null;
+  tracking_number: string | null;
+  consignment_id: string | null;
+}
+
+const one = <T,>(v: T | T[] | null | undefined): T | null => (Array.isArray(v) ? v[0] ?? null : v ?? null);
+
+/** Sent to Modessi as a split order: Modessi's own parcel carries the Modessi items. */
+const splitParcel = (o: LedgerOrderInput): ModessiLinkInput | null => {
+  const link = one(o.modessi_order_links);
+  return link && link.state === 'sent' && !link.full_order ? link : null;
+};
+
+/** When the Modessi items left: Modessi's parcel for split orders, else the order's own. */
+export const modessiSentAt = (o: LedgerOrderInput): string | null => {
+  const split = splitParcel(o);
+  return split ? split.shipped_at : o.steadfast_sent_at;
+};
 
 export interface PriceBook {
   /** Marked Modessi products → unit price (null until it is set). */
@@ -125,19 +154,33 @@ export function toLedgerOrder(o: LedgerOrderInput, book: PriceBook): LedgerOrder
   const modessiItems = o.order_items.filter((item) => book.modessiPrice.has(productIdOf(item, book)));
   if (modessiItems.length === 0) return null;
   const mixed = modessiItems.length < o.order_items.length;
+  const link = one(o.modessi_order_links);
+  // Split order sent to Modessi: its Modessi items travel in Modessi's own parcel, so that
+  // parcel's outcome, cash and delivery charge apply, not those of Maxora's parcel.
+  const split = splitParcel(o);
 
-  const outcome = courierOutcome(o.courier_status?.toLowerCase() ?? null);
+  const outcome = courierOutcome((split ? split.delivery_status : o.courier_status)?.toLowerCase() ?? null);
   const products = modessiItems.reduce((s, i) => s + Number(i.quantity), 0);
-  const amount = mixed
-    ? modessiItems.reduce((s, i) => s + Number(i.price) * Number(i.quantity), 0)
-    : outcome === 'delivered' && o.courier_cod_amount != null
-      ? Number(o.courier_cod_amount)
-      : Number(o.total);
+  const amount = split
+    ? outcome === 'delivered' && split.courier_cod_amount != null
+      ? Number(split.courier_cod_amount)
+      : Number(split.cod_amount ?? modessiItems.reduce((s, i) => s + Number(i.price) * Number(i.quantity), 0))
+    : mixed
+      ? modessiItems.reduce((s, i) => s + Number(i.price) * Number(i.quantity), 0)
+      : outcome === 'delivered' && o.courier_cod_amount != null
+        ? Number(o.courier_cod_amount)
+        : Number(o.total);
 
-  // The cost the database recorded wins (it is frozen); otherwise use current prices.
-  const recorded = Array.isArray(o.order_modessi_costs) ? o.order_modessi_costs[0] : o.order_modessi_costs;
+  // Modessi's own wholesale total for an order sent to Modessi (what it charges) wins; then the
+  // cost the database recorded (frozen); otherwise current prices.
+  const recorded = one(o.order_modessi_costs);
   const missingProducts: string[] = [];
-  let cost: number | null = recorded ? Number(recorded.cost) : null;
+  let cost: number | null =
+    link && link.state === 'sent' && link.wholesale_total != null
+      ? Number(link.wholesale_total)
+      : recorded
+        ? Number(recorded.cost)
+        : null;
   if (cost == null) {
     let sum = 0;
     for (const item of modessiItems) {
@@ -148,8 +191,9 @@ export function toLedgerOrder(o: LedgerOrderInput, book: PriceBook): LedgerOrder
     cost = missingProducts.length === 0 ? sum : null;
   }
 
-  const deliveryEstimated = o.courier_delivery_charge == null;
-  const delivery = Number(o.courier_delivery_charge ?? o.shipping_cost ?? 0);
+  const charge = split ? split.courier_delivery_charge : o.courier_delivery_charge;
+  const deliveryEstimated = charge == null;
+  const delivery = Number(charge ?? o.shipping_cost ?? 0);
 
   const state: OrderState =
     outcome === 'cancelled'
@@ -167,9 +211,9 @@ export function toLedgerOrder(o: LedgerOrderInput, book: PriceBook): LedgerOrder
     id: o.id,
     order_number: o.order_number,
     shipping_name: o.shipping_name,
-    tracking_number: o.tracking_number,
-    steadfast_consignment_id: o.steadfast_consignment_id,
-    courier_status: o.courier_status,
+    tracking_number: split ? split.tracking_number : o.tracking_number,
+    steadfast_consignment_id: split ? split.consignment_id : o.steadfast_consignment_id,
+    courier_status: split ? split.delivery_status : o.courier_status,
     outcome,
     state,
     products,
@@ -244,8 +288,9 @@ export function buildLedger(
 ): { days: LedgerDay[]; totals: LedgerTotals } {
   const byDate = new Map<string, LedgerDay>();
   for (const raw of orders) {
-    if (!raw.steadfast_sent_at) continue;
-    const date = dayOf(raw.steadfast_sent_at);
+    const sentAt = modessiSentAt(raw);
+    if (!sentAt) continue;
+    const date = dayOf(sentAt);
     if ((from && date < from) || (to && date > to)) continue;
     const order = toLedgerOrder(raw, book);
     if (!order) continue;

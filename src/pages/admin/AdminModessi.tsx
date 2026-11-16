@@ -47,12 +47,16 @@ import { cn } from '@/lib/utils';
 //   by the database (order_modessi_costs) and never changed afterwards.
 // - Delivery = Steadfast's charge for the parcel (from the webhook); until Steadfast reports it,
 //   the order's own delivery fee is shown as an estimate (~).
+// - Orders sent to Modessi (Sent to Modessi tab) use Modessi's parcel: its real delivery charge
+//   and cash collected come from Modessi's Steadfast webhook through modessi-sync. A split
+//   order counts only Modessi's parcel here, on the day that parcel left.
 // - The money rules live in src/lib/modessiLedger.ts. Counted ("confirmed") figures always
 //   reconcile: Net Profit = Selling − Purchase − Delivery, where Delivery includes the charges
 //   lost on cancelled parcels. Orders on the way or waiting for a price are shown as pending.
 
 const ORDER_COLUMNS =
-  'id, order_number, shipping_name, total, shipping_cost, steadfast_sent_at, courier_status, courier_cod_amount, courier_delivery_charge, tracking_number, steadfast_consignment_id, order_items(quantity, price, product_id, product_name), order_modessi_costs(cost)';
+  'id, order_number, shipping_name, total, shipping_cost, steadfast_sent_at, courier_status, courier_cod_amount, courier_delivery_charge, tracking_number, steadfast_consignment_id, order_items(quantity, price, product_id, product_name), order_modessi_costs(cost), ' +
+  'modessi_order_links(full_order, state, cod_amount, wholesale_total, delivery_status, courier_cod_amount, courier_delivery_charge, shipped_at, tracking_number, consignment_id)';
 
 const ORDERS_KEY = 'modessi-orders';
 const PRICES_KEY = 'modessi-prices';
@@ -78,7 +82,7 @@ const schemaErrorHint = (err: unknown): string | null => {
   if (typeof err !== 'object' || err === null) return null;
   const { code, message = '' } = err as { code?: string; message?: string };
   if (code === 'PGRST205' || code === '42P01' || code === '42703' || code === 'PGRST200' || /modessi|steadfast_sent_at|courier_/.test(message)) {
-    return 'Run supabase/migrations/20261115130000_add_steadfast_courier_tracking.sql and 20261115140000_add_modessi_costs.sql in Supabase, then reload this page.';
+    return 'Run the Modessi migrations in supabase/migrations (20261115130000, 20261115140000, 20261116120000 and 20261116130000) in Supabase, then reload this page.';
   }
   return null;
 };
@@ -96,6 +100,21 @@ async function fetchSteadfastOrders(): Promise<LedgerOrderInput[]> {
     if (error) throw error;
     all.push(...((data ?? []) as unknown as LedgerOrderInput[]));
     if (!data || data.length < pageSize) break;
+  }
+
+  // Split orders whose Modessi parcel has left while Maxora has not shipped its own part yet.
+  const seen = new Set(all.map((o) => o.id));
+  const { data: splits, error: splitError } = await supabase
+    .from('modessi_order_links' as never)
+    .select('order_id')
+    .eq('full_order', false)
+    .not('shipped_at', 'is', null);
+  if (splitError) throw splitError;
+  const missing = ((splits ?? []) as unknown as { order_id: string }[]).map((s) => s.order_id).filter((id) => !seen.has(id));
+  for (let i = 0; i < missing.length; i += 200) {
+    const { data, error } = await supabase.from('orders').select(ORDER_COLUMNS).in('id', missing.slice(i, i + 200));
+    if (error) throw error;
+    all.push(...((data ?? []) as unknown as LedgerOrderInput[]));
   }
   return all;
 }

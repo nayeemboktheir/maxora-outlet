@@ -53,6 +53,7 @@ import { InvoicePrintDialog } from '@/components/admin/InvoicePrintDialog';
 import { StickerPrintDialog } from '@/components/admin/StickerPrintDialog';
 import { ManualOrderDialog } from '@/components/admin/ManualOrderDialog';
 import { OrderEditDialog } from '@/components/admin/OrderEditDialog';
+import { notifyModessi } from '@/lib/modessiSync';
 
 interface SteadfastStatus {
   tracking_code: string;
@@ -70,6 +71,8 @@ interface OrderItem {
   quantity: number;
   price: number;
   variation_name: string | null;
+  color?: string | null;
+  size_name?: string | null;
 }
 
 interface Order {
@@ -128,7 +131,7 @@ const FAST_ORDER_SELECT = `
   id, order_number, status, payment_status, payment_method, total, subtotal, shipping_cost, discount,
   shipping_name, shipping_phone, shipping_street, shipping_city, shipping_district, shipping_postal_code,
   tracking_number, tracking_url, notes, invoice_note, steadfast_note, steadfast_consignment_id, created_at, order_source, is_printed,
-  order_items (id, order_id, product_id, product_name, product_image, quantity, price, variation_name)
+  order_items (id, order_id, product_id, product_name, product_image, quantity, price, variation_name, color, size_name)
 `;
 
 // Debounce hook for search
@@ -546,6 +549,8 @@ export default function AdminOrders() {
       if (order) {
         sendStatusSms(order, newStatus);
       }
+      // A cancellation is passed on to Modessi if it was shipping this order.
+      if (newStatus === 'cancelled') void notifyModessi([orderId]);
     } catch (error) {
       toast.error('Failed to update order status');
     } finally {
@@ -880,6 +885,7 @@ export default function AdminOrders() {
       } else {
         toast.success(`Successfully updated ${successCount} orders to ${newStatus}`);
       }
+      if (newStatus === 'cancelled') void notifyModessi([...selectedOrderIds]);
 
       setSelectedOrderIds(new Set());
       // Update local state instantly

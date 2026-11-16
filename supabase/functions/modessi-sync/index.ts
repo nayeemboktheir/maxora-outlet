@@ -5,8 +5,10 @@
 //   { action: 'auto_link' }      link products whose names match a Modessi product
 //   { action: 'sync_prices' }    wholesale price + stock from Modessi onto linked products
 //   { action: 'forward', orderId }   (re)send one order to Modessi
-//   { action: 'sync_statuses' }  status/tracking from Modessi; cancellations to Modessi
-//   { action: 'all' }            sync_prices + retry failed sends + sync_statuses (cron)
+//   { action: 'push_updates', orderIds }  push edits / cancellations of these orders now
+//   { action: 'sync_statuses' }  status, tracking and courier money from Modessi
+//   { action: 'sync_payments' | 'record_payment' | 'delete_payment' }  payments from Modessi
+//   { action: 'all' }            prices + pending sends/edits + statuses + payments (cron)
 //
 // Callers: an admin (their session JWT) or the cron (service-role key).
 
@@ -17,7 +19,11 @@ import {
   fetchCatalog,
   forwardOrder,
   modessiConfigured,
-  retryFailed,
+  pushPending,
+  pushUpdate,
+  syncPayments,
+  recordPayment,
+  deletePayment,
   syncPrices,
   syncStatuses,
 } from '../_shared/modessi.ts';
@@ -101,14 +107,43 @@ Deno.serve(async (req) => {
         return json(await forwardOrder(supabase, orderId));
       }
 
+      case 'push_updates': {
+        // Called by the admin pages right after an order is edited or its status changed.
+        const ids: string[] = Array.isArray(body.orderIds) ? body.orderIds.map(String).filter((x: string) => UUID_RE.test(x)).slice(0, 100) : [];
+        const results = [];
+        for (const id of ids) results.push({ orderId: id, ...(await pushUpdate(supabase, id)) });
+        return json({ results });
+      }
+
       case 'sync_statuses':
         return json(await syncStatuses(supabase));
 
+      case 'sync_payments':
+        return json(await syncPayments(supabase));
+
+      case 'record_payment': {
+        const amount = Number(body.amount);
+        const paidAt = String(body.paidAt ?? '');
+        if (!Number.isFinite(amount) || amount === 0 || !/^\d{4}-\d{2}-\d{2}$/.test(paidAt)) {
+          return json({ error: 'amount (not 0) and paidAt (yyyy-mm-dd) are required' }, 400);
+        }
+        const note = typeof body.note === 'string' ? body.note.trim().slice(0, 300) : null;
+        return json(await recordPayment(supabase, { amount, paid_at: paidAt, note }));
+      }
+
+      case 'delete_payment': {
+        const id = String(body.paymentId ?? '');
+        if (!UUID_RE.test(id)) return json({ error: 'paymentId required' }, 400);
+        return json(await deletePayment(supabase, id));
+      }
+
       case 'all': {
-        const prices = await syncPrices(supabase).catch((e) => ({ error: (e as Error).message }));
-        const retried = await retryFailed(supabase).catch((e) => ({ error: (e as Error).message }));
-        const statuses = await syncStatuses(supabase).catch((e) => ({ error: (e as Error).message }));
-        return json({ prices, retried, statuses });
+        const safe = <T,>(p: Promise<T>) => p.catch((e) => ({ error: (e as Error).message }));
+        const prices = await safe(syncPrices(supabase));
+        const pushed = await safe(pushPending(supabase));
+        const statuses = await safe(syncStatuses(supabase));
+        const payments = await safe(syncPayments(supabase));
+        return json({ prices, pushed, statuses, payments });
       }
 
       default:

@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { PackageCheck, Search, AlertTriangle, Check, Loader2, RefreshCw, Link2 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
+import { invokeModessiSync } from '@/lib/modessiSync';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -61,21 +62,7 @@ interface LinkInfo {
   syncedAt: string | null;
 }
 
-// supabase.functions.invoke puts a non-2xx body on error.context; surface its message.
-async function invokeSync<T>(body: Record<string, unknown>): Promise<T> {
-  const { data, error } = await supabase.functions.invoke('modessi-sync', { body });
-  if (error) {
-    let message = error.message;
-    try {
-      const ctx = (error as { context?: Response }).context;
-      if (ctx && typeof ctx.json === 'function') message = (await ctx.json())?.error ?? message;
-    } catch {
-      /* keep the generic message */
-    }
-    throw new Error(message);
-  }
-  return data as T;
-}
+const invokeSync = invokeModessiSync;
 
 const formatTk = (value: number) => {
   const rounded = Math.round(value);

@@ -74,77 +74,59 @@ const money = (n: number) => Math.round(n * 100) / 100;
 // Orders: Maxora -> Modessi
 // ---------------------------------------------------------------------------
 
-export type ForwardResult =
-  | { status: 'sent'; modessiOrderNumber: string | null; full: boolean }
-  | { status: 'skipped'; reason: string }
-  | { status: 'failed'; error: string };
+type OrderItem = {
+  product_id: string | null;
+  variation_name: string | null;
+  color: string | null;
+  size_name: string | null;
+  product_name: string;
+  price: number;
+  quantity: number;
+};
+
+type Payload =
+  | { kind: 'order'; full: boolean; order: Record<string, unknown> }
+  | { kind: 'none'; reason: string; cancel: boolean }
+  | { kind: 'unlinked'; full: boolean; message: string };
 
 /**
- * Send the Modessi items of one Maxora order to Modessi. Safe to call again: Modessi answers
- * a repeat with the order it already made, and a link already 'sent' is left alone.
+ * What Modessi should have for this Maxora order right now.
+ *   order     its Modessi items, customer and money
+ *   none      nothing for Modessi (no Modessi items any more, or cancelled); cancel = a cancel
+ *             is wanted (false while the order looks half-saved, e.g. items mid-replace)
+ *   unlinked  has Modessi items that are not linked to a Modessi product yet
  */
-export async function forwardOrder(supabase: SupabaseClient, orderId: string): Promise<ForwardResult> {
+async function buildPayload(supabase: SupabaseClient, orderId: string): Promise<Payload> {
   const { data: order, error } = await supabase
     .from('orders')
     .select(
-      'id, order_number, status, subtotal, shipping_cost, discount, total, payment_method, shipping_name, shipping_phone, shipping_street, steadfast_note, notes, ' +
+      'id, order_number, status, subtotal, shipping_cost, discount, total, payment_method, shipping_name, shipping_phone, shipping_street, steadfast_note, ' +
         'order_items(product_id, variation_name, color, size_name, product_name, price, quantity)',
     )
     .eq('id', orderId)
     .single();
   if (error) throw error;
 
-  // deno-lint-ignore no-explicit-any
-  const items = ((order as any).order_items ?? []) as Array<{
-    product_id: string | null;
-    variation_name: string | null;
-    color: string | null;
-    size_name: string | null;
-    product_name: string;
-    price: number;
-    quantity: number;
-  }>;
+  const items = (order.order_items ?? []) as OrderItem[];
+  if (order.status === 'cancelled') return { kind: 'none', reason: 'order is cancelled', cancel: true };
+  if (items.length === 0) return { kind: 'none', reason: 'order has no items right now', cancel: false };
 
   const productIds = Array.from(new Set(items.map((i) => i.product_id).filter((x): x is string => !!x)));
-  if (productIds.length === 0) return { status: 'skipped', reason: 'no catalogue items' };
-
-  const { data: marked, error: markedError } = await supabase
-    .from('modessi_products')
-    .select('product_id, modessi_product_id')
-    .in('product_id', productIds);
+  const { data: marked, error: markedError } = productIds.length
+    ? await supabase.from('modessi_products').select('product_id, modessi_product_id').in('product_id', productIds)
+    : { data: [], error: null };
   if (markedError) throw markedError;
 
-  const link = new Map((marked ?? []).map((m: { product_id: string; modessi_product_id: string | null }) => [m.product_id, m.modessi_product_id]));
+  const link = new Map<string, string | null>(
+    (marked ?? []).map((m: { product_id: string; modessi_product_id: string | null }) => [m.product_id, m.modessi_product_id]),
+  );
   const modessiItems = items.filter((i) => i.product_id && link.has(i.product_id));
-  if (modessiItems.length === 0) return { status: 'skipped', reason: 'no Modessi items' };
+  if (modessiItems.length === 0) return { kind: 'none', reason: 'no Modessi items', cancel: true };
 
   const full = modessiItems.length === items.length;
-
-  const { data: existing } = await supabase
-    .from('modessi_order_links')
-    .select('state, attempts')
-    .eq('order_id', orderId)
-    .maybeSingle();
-  if (existing?.state === 'sent') return { status: 'skipped', reason: 'already sent' };
-  if (existing?.state === 'cancelled') return { status: 'skipped', reason: 'cancelled' };
-  const attempts = (existing?.attempts ?? 0) + 1;
-
-  const fail = async (message: string): Promise<ForwardResult> => {
-    await supabase.from('modessi_order_links').upsert({
-      order_id: orderId,
-      full_order: full,
-      state: 'failed',
-      last_error: message.slice(0, 500),
-      attempts,
-    });
-    return { status: 'failed', error: message };
-  };
-
-  if (order.status === 'cancelled') return { status: 'skipped', reason: 'order is cancelled' };
-
   const unlinked = modessiItems.filter((i) => !link.get(i.product_id!));
   if (unlinked.length > 0) {
-    return fail(`Not linked to a Modessi product: ${unlinked.map((i) => i.product_name).join(', ')}`);
+    return { kind: 'unlinked', full, message: `Not linked to a Modessi product: ${unlinked.map((i) => i.product_name).join(', ')}` };
   }
 
   // Money. Whole order: Modessi collects exactly what Maxora would have. Split order: Modessi
@@ -157,33 +139,80 @@ export async function forwardOrder(supabase: SupabaseClient, orderId: string): P
   const discount = full ? Number(order.discount) || 0 : money((Number(order.discount) || 0) * share);
   const codAmount = !isCod ? 0 : full ? Number(order.total) || 0 : money(modessiSubtotal - discount);
 
-  await supabase
+  return {
+    kind: 'order',
+    full,
+    order: {
+      partner_order_id: orderId,
+      partner_order_number: order.order_number,
+      customer: { name: order.shipping_name, phone: order.shipping_phone, address: order.shipping_street },
+      items: modessiItems.map((i) => ({
+        modessi_product_id: link.get(i.product_id!),
+        options: [i.variation_name, i.color, i.size_name].filter((x): x is string => !!x && !!x.trim()),
+        description: i.product_name,
+        quantity: i.quantity,
+        price: Number(i.price),
+      })),
+      shipping_cost: shippingCost,
+      discount,
+      cod_amount: codAmount,
+      note: [full ? null : 'Split order: only these items', order.steadfast_note].filter(Boolean).join(' | '),
+    },
+  };
+}
+
+export type ForwardResult =
+  | { status: 'sent'; modessiOrderNumber: string | null; full: boolean }
+  | { status: 'updated'; full: boolean }
+  | { status: 'cancelled' }
+  | { status: 'skipped'; reason: string }
+  | { status: 'failed'; error: string };
+
+/**
+ * Send the Modessi items of one Maxora order to Modessi. Safe to call again: Modessi answers
+ * a repeat with the order it already made. A link already 'sent' goes through pushUpdate.
+ */
+export async function forwardOrder(supabase: SupabaseClient, orderId: string): Promise<ForwardResult> {
+  const { data: existing } = await supabase
     .from('modessi_order_links')
-    .upsert({ order_id: orderId, full_order: full, state: existing?.state ?? 'pending', attempts: existing?.attempts ?? 0 });
+    .select('state, attempts, dirty_at')
+    .eq('order_id', orderId)
+    .maybeSingle();
+  if (existing?.state === 'sent') return pushUpdate(supabase, orderId);
+  const dirtyAt: string | null = existing?.dirty_at ?? null;
+  if (existing?.state === 'cancelled') return { status: 'skipped', reason: 'cancelled' };
+  const attempts = (existing?.attempts ?? 0) + 1;
 
-  try {
-    const result = await callModessi('create_order', {
-      order: {
-        partner_order_id: orderId,
-        partner_order_number: order.order_number,
-        customer: { name: order.shipping_name, phone: order.shipping_phone, address: order.shipping_street },
-        items: modessiItems.map((i) => ({
-          modessi_product_id: link.get(i.product_id!),
-          options: [i.variation_name, i.color, i.size_name].filter((x): x is string => !!x && !!x.trim()),
-          description: i.product_name,
-          quantity: i.quantity,
-          price: Number(i.price),
-        })),
-        shipping_cost: shippingCost,
-        discount,
-        cod_amount: codAmount,
-        note: [full ? null : 'Split order: only these items', order.steadfast_note].filter(Boolean).join(' | '),
-      },
-    });
+  const payload = await buildPayload(supabase, orderId);
 
+  if (payload.kind === 'none') {
+    // Nothing ever reached Modessi: drop the waiting link so it is not retried forever.
+    if (existing && payload.cancel) await supabase.from('modessi_order_links').delete().eq('order_id', orderId).neq('state', 'sent');
+    return { status: 'skipped', reason: payload.reason };
+  }
+
+  const fail = async (message: string, full: boolean): Promise<ForwardResult> => {
     await supabase.from('modessi_order_links').upsert({
       order_id: orderId,
       full_order: full,
+      state: 'failed',
+      last_error: message.slice(0, 500),
+      attempts,
+    });
+    return { status: 'failed', error: message };
+  };
+
+  if (payload.kind === 'unlinked') return fail(payload.message, payload.full);
+
+  await supabase
+    .from('modessi_order_links')
+    .upsert({ order_id: orderId, full_order: payload.full, state: existing?.state ?? 'pending', attempts: existing?.attempts ?? 0 });
+
+  try {
+    const result = await callModessi('create_order', { order: payload.order });
+    await supabase.from('modessi_order_links').upsert({
+      order_id: orderId,
+      full_order: payload.full,
       state: 'sent',
       modessi_order_id: result.order_id,
       modessi_order_number: result.order_number,
@@ -194,27 +223,95 @@ export async function forwardOrder(supabase: SupabaseClient, orderId: string): P
       attempts,
       sent_at: new Date().toISOString(),
     });
-    return { status: 'sent', modessiOrderNumber: result.order_number ?? null, full };
+    // Modessi got the order as read above. Clear the change flag only if no edit landed since;
+    // otherwise it stays set and pushPending sends the edit.
+    let clear = supabase.from('modessi_order_links').update({ needs_update: false }).eq('order_id', orderId);
+    clear = dirtyAt ? clear.eq('dirty_at', dirtyAt) : clear.is('dirty_at', null);
+    await clear;
+    return { status: 'sent', modessiOrderNumber: result.order_number ?? null, full: payload.full };
   } catch (err) {
-    return fail((err as Error)?.message ?? String(err));
+    return fail((err as Error)?.message ?? String(err), payload.full);
   }
 }
 
-/** Retry orders that failed to send (up to MAX_ATTEMPTS tries each). */
-export async function retryFailed(supabase: SupabaseClient, max = 20) {
-  const { data, error } = await supabase
+/**
+ * Bring Modessi's copy of an already-sent order up to date with Maxora's: new items, amounts or
+ * customer, or a cancellation. Modessi refuses (409) once its parcel is with the courier; that is
+ * recorded on the link (update_error) for the admin, since only a phone call can fix it then.
+ */
+export async function pushUpdate(supabase: SupabaseClient, orderId: string): Promise<ForwardResult> {
+  const { data: link, error } = await supabase
     .from('modessi_order_links')
-    .select('order_id')
-    .in('state', ['failed', 'pending'])
-    .lt('attempts', MAX_ATTEMPTS)
-    .order('created_at')
-    .limit(max);
+    .select('state, dirty_at')
+    .eq('order_id', orderId)
+    .maybeSingle();
   if (error) throw error;
+  if (!link || link.state !== 'sent') return forwardOrder(supabase, orderId);
+
+  const dirtyAt = link.dirty_at;
+  // Only clear the flag if no newer edit arrived while this push was running.
+  const settle = async (fields: Record<string, unknown>) => {
+    let q = supabase.from('modessi_order_links').update({ ...fields, needs_update: false }).eq('order_id', orderId);
+    q = dirtyAt ? q.eq('dirty_at', dirtyAt) : q.is('dirty_at', null);
+    await q;
+  };
+  const refused = (err: unknown) => err instanceof ModessiError && (err.status === 409 || err.status === 404);
+
+  const payload = await buildPayload(supabase, orderId);
+
+  if (payload.kind === 'none') {
+    if (!payload.cancel) return { status: 'skipped', reason: payload.reason };
+    try {
+      await callModessi('cancel_order', { partner_order_id: orderId });
+      await settle({ state: 'cancelled', modessi_status: 'cancelled', update_error: null, synced_at: new Date().toISOString() });
+      return { status: 'cancelled' };
+    } catch (err) {
+      const message = refused(err)
+        ? `Cancelled on Maxora after Modessi gave it to the courier. Ask Modessi to stop it. (${(err as Error).message})`
+        : `Cancel at Modessi failed: ${(err as Error).message}`;
+      if (refused(err)) await settle({ update_error: message.slice(0, 500) });
+      else await supabase.from('modessi_order_links').update({ update_error: message.slice(0, 500) }).eq('order_id', orderId);
+      return { status: 'failed', error: message };
+    }
+  }
+
+  if (payload.kind === 'unlinked') {
+    await supabase.from('modessi_order_links').update({ update_error: payload.message }).eq('order_id', orderId);
+    return { status: 'failed', error: payload.message };
+  }
+
+  try {
+    const result = await callModessi('update_order', { order: payload.order });
+    await settle({
+      full_order: payload.full,
+      cod_amount: result.cod_amount,
+      wholesale_total: result.wholesale_total,
+      update_error: null,
+      synced_at: new Date().toISOString(),
+    });
+    return { status: 'updated', full: payload.full };
+  } catch (err) {
+    const message = refused(err)
+      ? `Changed on Maxora after Modessi gave it to the courier; Modessi still has the old version. (${(err as Error).message})`
+      : `Update at Modessi failed: ${(err as Error).message}`;
+    if (refused(err)) await settle({ update_error: message.slice(0, 500) });
+    else await supabase.from('modessi_order_links').update({ update_error: message.slice(0, 500) }).eq('order_id', orderId);
+    return { status: 'failed', error: message };
+  }
+}
+
+/** Send what is waiting: failed or not-yet-sent orders (up to MAX_ATTEMPTS each) and edits. */
+export async function pushPending(supabase: SupabaseClient, max = 30) {
+  const [waiting, changed] = await Promise.all([
+    supabase.from('modessi_order_links').select('order_id').in('state', ['failed', 'pending']).lt('attempts', MAX_ATTEMPTS).order('created_at').limit(max),
+    supabase.from('modessi_order_links').select('order_id').eq('state', 'sent').eq('needs_update', true).order('dirty_at').limit(max),
+  ]);
+  if (waiting.error) throw waiting.error;
+  if (changed.error) throw changed.error;
 
   const results: Array<{ orderId: string } & ForwardResult> = [];
-  for (const row of data ?? []) {
-    results.push({ orderId: row.order_id, ...(await forwardOrder(supabase, row.order_id)) });
-  }
+  for (const row of waiting.data ?? []) results.push({ orderId: row.order_id, ...(await forwardOrder(supabase, row.order_id)) });
+  for (const row of changed.data ?? []) results.push({ orderId: row.order_id, ...(await pushUpdate(supabase, row.order_id)) });
   return results;
 }
 
@@ -341,43 +438,36 @@ export async function syncPrices(supabase: SupabaseClient, catalog?: CatalogProd
 }
 
 // ---------------------------------------------------------------------------
-// Status: Modessi -> Maxora (and cancellations Maxora -> Modessi)
+// Status and courier money: Modessi -> Maxora
 // ---------------------------------------------------------------------------
+
+// Keep asking about a finished parcel this long, for Steadfast's delivery charge to arrive.
+const CHARGE_WAIT_DAYS = 30;
 
 export async function syncStatuses(supabase: SupabaseClient) {
   const { data: links, error } = await supabase
     .from('modessi_order_links')
-    .select('order_id, full_order, modessi_status, delivery_status, consignment_id, orders(status, tracking_number, steadfast_consignment_id, courier_status, courier_status_updated_at)')
+    .select(
+      'order_id, full_order, modessi_status, delivery_status, courier_delivery_charge, consignment_id, shipped_at, ' +
+        'orders(status, tracking_number, steadfast_consignment_id, courier_status, courier_status_updated_at)',
+    )
     .eq('state', 'sent')
     .order('sent_at', { ascending: false })
-    .limit(300);
+    .limit(500);
   if (error) throw error;
 
+  const cutoff = Date.now() - CHARGE_WAIT_DAYS * 86_400_000;
   // deno-lint-ignore no-explicit-any
-  // Done once Modessi closed it or the courier reached a final outcome.
-  const open = (links ?? []).filter(
-    // deno-lint-ignore no-explicit-any
-    (l: any) => !FINAL_STATUSES.includes(l.modessi_status ?? '') && courierOutcome(l.delivery_status ?? null) === 'pending',
-  ) as any[];
+  const open = ((links ?? []) as any[]).filter((l) => {
+    if (l.orders?.status === 'cancelled') return false; // handled by pushUpdate
+    const parcelDone = courierOutcome(l.delivery_status ?? null) !== 'pending';
+    if (parcelDone) return l.courier_delivery_charge == null && (!l.shipped_at || Date.parse(l.shipped_at) > cutoff);
+    return !(['cancelled', 'delivered', 'returned'].includes(l.modessi_status ?? '') && !l.consignment_id);
+  });
 
-  // Maxora cancelled it: cancel at Modessi too, while it is not yet with the courier.
-  let cancelled = 0;
-  for (const l of open.filter((x) => x.orders?.status === 'cancelled')) {
-    try {
-      const r = await callModessi('cancel_order', { partner_order_id: l.order_id });
-      if (r?.cancelled) {
-        await supabase.from('modessi_order_links').update({ state: 'cancelled', modessi_status: 'cancelled', synced_at: new Date().toISOString() }).eq('order_id', l.order_id);
-        cancelled++;
-      }
-    } catch (err) {
-      await supabase.from('modessi_order_links').update({ last_error: `Cancel at Modessi failed: ${(err as Error).message}`.slice(0, 500) }).eq('order_id', l.order_id);
-    }
-  }
-
-  const ask = open.filter((x) => x.orders?.status !== 'cancelled');
   let updated = 0;
-  for (let i = 0; i < ask.length; i += 100) {
-    const batch = ask.slice(i, i + 100);
+  for (let i = 0; i < open.length; i += 100) {
+    const batch = open.slice(i, i + 100);
     const res = await callModessi('order_status', { partner_order_ids: batch.map((l) => l.order_id) });
     // deno-lint-ignore no-explicit-any
     const byId = new Map<string, any>((res?.orders ?? []).map((o: any) => [o.partner_order_id, o]));
@@ -386,6 +476,7 @@ export async function syncStatuses(supabase: SupabaseClient) {
       const m = byId.get(l.order_id);
       if (!m) continue;
       const now = new Date().toISOString();
+      const shippedAt = l.shipped_at ?? (m.consignment_id ? m.sent_at ?? now : null);
 
       await supabase
         .from('modessi_order_links')
@@ -393,32 +484,42 @@ export async function syncStatuses(supabase: SupabaseClient) {
           modessi_status: m.status,
           tracking_number: m.tracking_number,
           consignment_id: m.consignment_id,
-          delivery_status: m.delivery_status ?? undefined,
+          ...(m.delivery_status ? { delivery_status: m.delivery_status } : {}),
+          ...(m.courier_cod_amount != null ? { courier_cod_amount: m.courier_cod_amount } : {}),
+          ...(m.courier_delivery_charge != null ? { courier_delivery_charge: m.courier_delivery_charge } : {}),
           cod_amount: m.cod_amount,
           wholesale_total: m.wholesale_total,
+          shipped_at: shippedAt,
           synced_at: now,
-          ...(m.status === 'cancelled' ? { state: 'cancelled' } : {}),
+          // Modessi cancelled it before shipping (e.g. out of stock).
+          ...(m.status === 'cancelled' && !m.consignment_id ? { state: 'cancelled' } : {}),
         })
         .eq('order_id', l.order_id);
 
-      // Whole order shipped by Modessi: the Maxora order shows Modessi's parcel.
+      // Whole order shipped by Modessi: the Maxora order shows Modessi's parcel, including the
+      // cash collected and Steadfast's real charge, so the profit page needs no estimate.
       if (l.full_order && l.orders) {
         const o = l.orders;
         const update: Record<string, unknown> = {};
         if (m.consignment_id && !o.steadfast_consignment_id) {
           update.steadfast_consignment_id = String(m.consignment_id);
           update.tracking_number = m.tracking_number ?? String(m.consignment_id);
-          update.steadfast_sent_at = now;
+          update.steadfast_sent_at = shippedAt;
           if (['pending', 'confirmed'].includes(o.status)) update.status = 'processing';
         }
         if (m.status === 'cancelled' && !m.consignment_id && o.status !== 'cancelled') update.status = 'cancelled';
         if (m.delivery_status) {
           const courier = buildCourierUpdate(
             { status: (update.status as string) ?? o.status, courier_status: o.courier_status, courier_status_updated_at: o.courier_status_updated_at },
-            { status: m.delivery_status },
+            { status: m.delivery_status, cod_amount: m.courier_cod_amount, delivery_charge: m.courier_delivery_charge },
             Date.now(),
           );
           if (courier.apply) Object.assign(update, courier.update);
+          else {
+            // Same status, but the money may have arrived since.
+            if (m.courier_cod_amount != null) update.courier_cod_amount = m.courier_cod_amount;
+            if (m.courier_delivery_charge != null) update.courier_delivery_charge = m.courier_delivery_charge;
+          }
         }
         if (Object.keys(update).length > 0) {
           const { error: updateError } = await supabase.from('orders').update(update).eq('id', l.order_id);
@@ -429,5 +530,45 @@ export async function syncStatuses(supabase: SupabaseClient) {
     }
   }
 
-  return { checked: ask.length, updated, cancelled };
+  return { checked: open.length, updated };
+}
+
+// ---------------------------------------------------------------------------
+// Payments from Modessi (both sites keep a copy; Modessi's is the master)
+// ---------------------------------------------------------------------------
+
+export async function syncPayments(supabase: SupabaseClient) {
+  const res = await callModessi('payments');
+  // deno-lint-ignore no-explicit-any
+  const payments = (res?.payments ?? []) as any[];
+  const ids = payments.map((p) => p.id);
+
+  if (payments.length > 0) {
+    const { error } = await supabase.from('modessi_payments').upsert(
+      payments.map((p) => ({ id: p.id, amount: p.amount, paid_at: p.paid_at, note: p.note, recorded_by: p.recorded_by, created_at: p.created_at })),
+      { onConflict: 'id' },
+    );
+    if (error) throw error;
+  }
+  // Deleted on Modessi: delete here too.
+  let del = supabase.from('modessi_payments').delete();
+  del = ids.length > 0 ? del.not('id', 'in', `(${ids.join(',')})`) : del.not('id', 'is', null);
+  const { error: delError } = await del;
+  if (delError) throw delError;
+
+  return { payments: payments.length };
+}
+
+export async function recordPayment(
+  supabase: SupabaseClient,
+  payment: { amount: number; paid_at: string; note?: string | null },
+) {
+  const id = crypto.randomUUID();
+  await callModessi('record_payment', { payment: { id, ...payment } });
+  return syncPayments(supabase);
+}
+
+export async function deletePayment(supabase: SupabaseClient, paymentId: string) {
+  await callModessi('delete_payment', { payment_id: paymentId });
+  return syncPayments(supabase);
 }

@@ -19,6 +19,7 @@ import {
 } from '@/components/ui/select';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
+import { notifyModessi } from '@/lib/modessiSync';
 import { Loader2, Plus, Trash2 } from 'lucide-react';
 
 interface OrderItem {
@@ -29,6 +30,8 @@ interface OrderItem {
   quantity: number;
   price: number;
   variation_name: string | null;
+  color?: string | null;
+  size_name?: string | null;
 }
 
 interface Order {
@@ -222,6 +225,9 @@ export function OrderEditDialog({ order, open, onOpenChange, onOrderUpdated }: O
         quantity: item.quantity,
         price: item.price,
         variation_name: item.variation_name,
+        // Keep colour and size: Modessi matches its variations by them.
+        color: item.color ?? null,
+        size_name: item.size_name ?? null,
         // Keep the product link so the Modessi cost can still be worked out after an edit.
         product_id: item.product_id ?? null,
         variation_id: null,
@@ -252,6 +258,8 @@ export function OrderEditDialog({ order, open, onOpenChange, onOrderUpdated }: O
       };
 
       toast.success('Order updated successfully');
+      // If Modessi ships this order, give it the new version now (the cron retries on failure).
+      void notifyModessi([order.id]);
       onOrderUpdated(updatedOrder);
       onOpenChange(false);
     } catch (error) {
