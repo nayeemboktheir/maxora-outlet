@@ -55,7 +55,7 @@ import { cn } from '@/lib/utils';
 //   lost on cancelled parcels. Orders on the way or waiting for a price are shown as pending.
 
 const ORDER_COLUMNS =
-  'id, order_number, shipping_name, total, shipping_cost, created_at, status, steadfast_sent_at, courier_status, courier_cod_amount, courier_delivery_charge, tracking_number, steadfast_consignment_id, order_items(quantity, price, product_id, product_name), order_modessi_costs(cost), ' +
+  'id, order_number, shipping_name, total, shipping_cost, created_at, status, steadfast_sent_at, courier_status, courier_cod_amount, courier_delivery_charge, tracking_number, tracking_url, steadfast_consignment_id, order_items(quantity, price, product_id, product_name), order_modessi_costs(cost), ' +
   'modessi_order_links(full_order, state, cod_amount, wholesale_total, delivery_status, courier_cod_amount, courier_delivery_charge, shipped_at, tracking_number, consignment_id)';
 
 const ORDERS_KEY = 'modessi-orders';
@@ -73,6 +73,15 @@ const formatTk = (value: number) => {
 
 const profitClass = (value: number) =>
   value > 0 ? 'text-green-600' : value < 0 ? 'text-destructive' : 'text-muted-foreground';
+
+const steadfastTrackingUrl = (trackingUrl: string | null, trackingNumber: string | null) => {
+  if (/^https:\/\/(?:www\.)?steadfast\.com\.bd(?:\/|$)/i.test(trackingUrl ?? '')) return trackingUrl;
+  // A numeric consignment ID is not a public tracking code. Steadfast's public links use the
+  // courier tracking code (for example: SER261116ST08161C7BD).
+  return trackingNumber && !/^\d+$/.test(trackingNumber)
+    ? `https://steadfast.com.bd/t/${encodeURIComponent(trackingNumber)}`
+    : null;
+};
 
 // Columns of the per-order breakdown inside an expanded day.
 const ORDER_GRID =
@@ -576,7 +585,7 @@ export default function AdminModessi() {
                                     <span />
                                     <span>Order</span>
                                     <span>Customer</span>
-                                    <span>Steadfast ID</span>
+                                    <span>Steadfast tracking</span>
                                     <span className="text-right">Items</span>
                                     <span className="text-right">Selling</span>
                                     <span className="text-right">Purchase</span>
@@ -600,8 +609,19 @@ export default function AdminModessi() {
                                           )}
                                         </span>
                                         <span className="truncate text-muted-foreground">{o.shipping_name}</span>
-                                        <span className="truncate font-mono text-xs select-all">
-                                          {o.steadfast_consignment_id ?? <span className="text-muted-foreground">—</span>}
+                                        <span className="truncate text-xs">
+                                          {steadfastTrackingUrl(o.tracking_url, o.tracking_number) ? (
+                                            <a
+                                              href={steadfastTrackingUrl(o.tracking_url, o.tracking_number)!}
+                                              target="_blank"
+                                              rel="noopener noreferrer"
+                                              className="text-primary hover:underline"
+                                            >
+                                              https://steadfast.com.bd/tracking
+                                            </a>
+                                          ) : (
+                                            <span className="text-muted-foreground">—</span>
+                                          )}
                                         </span>
                                         <span className="text-right text-muted-foreground">{o.products}</span>
                                         <span
