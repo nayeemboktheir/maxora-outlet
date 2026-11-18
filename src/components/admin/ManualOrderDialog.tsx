@@ -968,7 +968,7 @@ export function ManualOrderDialog({ open, onOpenChange, onOrderCreated }: Manual
                                 value={item.customSize || ''}
                                 onChange={(e) => updateCustomSize(item.product.id, item.variation?.id, e.target.value)}
                                 className="h-6 w-20 text-xs px-1 py-0"
-                                placeholder="Size.."
+                                placeholder={item.variation?.name || 'Size..'}
                               />
                             </div>
                             {/* Editable price input */}

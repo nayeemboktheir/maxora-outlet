@@ -53,7 +53,7 @@ import { InvoicePrintDialog } from '@/components/admin/InvoicePrintDialog';
 import { StickerPrintDialog } from '@/components/admin/StickerPrintDialog';
 import { ManualOrderDialog } from '@/components/admin/ManualOrderDialog';
 import { OrderEditDialog } from '@/components/admin/OrderEditDialog';
-import { notifyModessi, sendToModessi } from '@/lib/modessiSync';
+import { notifyModessi, sendToModessi, syncModessiNow } from '@/lib/modessiSync';
 
 interface SteadfastStatus {
   tracking_code: string;
@@ -171,6 +171,7 @@ export default function AdminOrders() {
   const [bulkSending, setBulkSending] = useState(false);
   const [bulkSendingCarrybee, setBulkSendingCarrybee] = useState(false);
   const [sendingModessi, setSendingModessi] = useState(false);
+  const [syncingModessi, setSyncingModessi] = useState(false);
   const [modessiOrderIds, setModessiOrderIds] = useState<Set<string>>(new Set());
 
   const loadModessiOrderIds = useCallback(async () => {
@@ -817,6 +818,16 @@ export default function AdminOrders() {
     }
   };
 
+  const handleSyncModessi = async () => {
+    setSyncingModessi(true);
+    try {
+      await syncModessiNow();
+      await Promise.all([loadOrders(false), loadModessiOrderIds()]);
+    } finally {
+      setSyncingModessi(false);
+    }
+  };
+
   const handleSendToModessi = async () => {
     if (selectedOrderIds.size === 0) {
       toast.error('Tick the orders to send to Modessi first');
@@ -1192,6 +1203,17 @@ export default function AdminOrders() {
               : selectedOrderIds.size > 0
                 ? `Send ${selectedOrderIds.size} to Modessi`
                 : 'Send to Modessi'}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleSyncModessi}
+            disabled={syncingModessi}
+            className="gap-1"
+            title="Get the latest status, tracking and delivery from Modessi now, and send any pending changes"
+          >
+            {syncingModessi ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+            {syncingModessi ? 'Syncing...' : 'Sync Modessi'}
           </Button>
         </div>
         <Button

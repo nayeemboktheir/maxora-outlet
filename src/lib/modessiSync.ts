@@ -55,6 +55,30 @@ export async function sendToModessi(orderIds: string[]): Promise<number> {
   return sent + updated;
 }
 
+type StepResult = { error?: string; [k: string]: unknown };
+
+/**
+ * The admin's "Sync Modessi" button: run the same full sync as the 15-minute cron right now
+ * (prices, pending sends/edits, statuses and tracking, payments) and report the outcome.
+ */
+export async function syncModessiNow(): Promise<boolean> {
+  try {
+    const r = await invokeModessiSync<{ prices: StepResult; pushed: StepResult; statuses: StepResult; payments: StepResult }>({ action: 'all' });
+    const failed = (['prices', 'pushed', 'statuses', 'payments'] as const).filter((k) => r[k]?.error);
+    if (failed.length > 0) {
+      toast.error(`Modessi sync: ${failed.map((k) => `${k} failed (${r[k].error})`).join('; ')}`);
+      return false;
+    }
+    const checked = Number(r.statuses?.checked ?? 0);
+    const updated = Number(r.statuses?.updated ?? 0);
+    toast.success(`Synced with Modessi: ${checked} order${checked === 1 ? '' : 's'} checked, ${updated} updated`);
+    return true;
+  } catch (err) {
+    toast.error(`Modessi sync: ${(err as Error).message}`);
+    return false;
+  }
+}
+
 /**
  * After an admin edits orders or changes their status: send the change to Modessi now instead
  * of waiting for the 15-minute cron. Orders without Modessi items are skipped by the function.

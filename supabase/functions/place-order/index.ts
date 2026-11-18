@@ -16,6 +16,8 @@ type PlaceOrderBody = {
     productId: string;
     variationId?: string;
     color?: string | null;
+    // Admin-typed size/variant label (only respected for orderSource === 'manual')
+    variationName?: string | null;
     quantity: number;
     productName?: string;
     productImage?: string | null;
@@ -354,6 +356,10 @@ Deno.serve(async (req) => {
         color: typeof i.color === 'string' && i.color.trim() ? i.color.trim().slice(0, 50) : null,
         size: typeof i.size === 'string' && i.size.trim() ? i.size.trim().slice(0, 50) : null,
         sizeId: typeof i.sizeId === 'string' && i.sizeId.trim() ? i.sizeId.trim() : undefined,
+        variationNameOverride:
+          typeof i.variationName === 'string' && i.variationName.trim()
+            ? i.variationName.trim().replace(/\s+/g, ' ').slice(0, 100)
+            : null,
         quantity: Number(i.quantity || 0),
         productName: typeof i.productName === 'string' ? i.productName.trim() : undefined,
         productImage: typeof i.productImage === 'string' ? i.productImage.trim() : null,
@@ -478,13 +484,17 @@ Deno.serve(async (req) => {
       // for carts placed before sizes carried ids.
       const sizeName = sz ? sz.name.slice(0, 50) : i.size;
 
+      // Manual orders: the size the admin typed in the dialog wins over the
+      // variation's own name, so it doesn't have to be re-entered in Edit Order.
+      const variationName = (isManualOrder && i.variationNameOverride) || v?.name || null;
+
       return {
         productId: p.id,
         variationId: v?.id ?? null,
-        variationName: v?.name ?? null,
+        variationName,
         color: i.color ?? null,
         sizeName: sizeName,
-        name: `${p.name}${v ? ` (${v.name})` : ''}${i.color ? ` [${i.color}]` : ''}${sizeName ? ` - ${sizeName}` : ''}`,
+        name: `${p.name}${variationName ? ` (${variationName})` : ''}${i.color ? ` [${i.color}]` : ''}${sizeName ? ` - ${sizeName}` : ''}`,
         image: v?.image_url || p.images?.[0] || null,
         price: itemPrice,
         quantity: i.quantity,
