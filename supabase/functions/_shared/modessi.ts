@@ -454,6 +454,9 @@ export async function syncPrices(supabase: SupabaseClient, catalog?: CatalogProd
 // Keep asking about a finished parcel this long, for Steadfast's delivery charge to arrive.
 const CHARGE_WAIT_DAYS = 30;
 
+/** Modessi order statuses that a whole order sent to Modessi copies onto the Maxora order. */
+const FOLLOWED_STATUSES = ['confirmed', 'processing', 'shipped', 'delivered', 'returned'];
+
 export async function syncStatuses(supabase: SupabaseClient) {
   const { data: links, error } = await supabase
     .from('modessi_order_links')
@@ -518,6 +521,10 @@ export async function syncStatuses(supabase: SupabaseClient) {
           if (['pending', 'confirmed'].includes(o.status)) update.status = 'processing';
         }
         if (m.status === 'cancelled' && !m.consignment_id && o.status !== 'cancelled') update.status = 'cancelled';
+        // Modessi packs and ships it, so its order status (processing, shipped, delivered...) is
+        // the truth. A cancelled Maxora order is left alone: pushUpdate cancels it at Modessi.
+        const current = (update.status as string) ?? o.status;
+        if (current !== 'cancelled' && FOLLOWED_STATUSES.includes(m.status) && m.status !== current) update.status = m.status;
         if (m.delivery_status) {
           const courier = buildCourierUpdate(
             { status: (update.status as string) ?? o.status, courier_status: o.courier_status, courier_status_updated_at: o.courier_status_updated_at },
