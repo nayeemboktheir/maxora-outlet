@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { buildLedger, type LedgerOrder, type LedgerOrderInput, type PriceBook } from '@/lib/modessiLedger';
+import { syncModessiNow } from '@/lib/modessiSync';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -257,6 +258,14 @@ export default function AdminModessi() {
 
   // Fallback for missed webhooks: re-check orders that are still on the way.
   const handleSync = async () => {
+    // Modessi ships from its own Steadfast account, so their parcels' status comes through Modessi.
+    setSyncing(true);
+    try {
+      await syncModessiNow();
+      await queryClient.invalidateQueries({ queryKey: [ORDERS_KEY] });
+    } finally {
+      setSyncing(false);
+    }
     const codes = [
       ...new Set(
         days.flatMap((d) =>
@@ -264,10 +273,7 @@ export default function AdminModessi() {
         ),
       ),
     ];
-    if (codes.length === 0) {
-      toast.info('No orders on the way to check');
-      return;
-    }
+    if (codes.length === 0) return;
     setSyncing(true);
     try {
       let saved = 0;
@@ -443,7 +449,7 @@ export default function AdminModessi() {
                 </CardTitle>
                 <Button variant="outline" size="sm" className="gap-2 self-start" onClick={handleSync} disabled={!ready || syncing}>
                   <RefreshCw className={cn('h-4 w-4', syncing && 'animate-spin')} />
-                  {syncing ? 'Syncing…' : 'Sync from Steadfast'}
+                  {syncing ? 'Syncing…' : 'Sync now'}
                 </Button>
               </div>
               <div className="flex flex-col sm:flex-row gap-3">
